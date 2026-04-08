@@ -16,9 +16,80 @@ export const subjectsTable = sqliteTable('subjects', {
 
 export const jobsTable = sqliteTable('jobs', {
   id: text('id').primaryKey(),
+  subjectId: text('subject_id'),
   type: text('type').notNull(),
   status: text('status').notNull(),
+  message: text('message').notNull().default(''),
   payload: text('payload').notNull(),
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull(),
+});
+
+export const sourceDocumentsTable = sqliteTable('source_documents', {
+  id: text('id').primaryKey(),
+  subjectId: text('subject_id').notNull(),
+  kind: text('kind').notNull(),
+  originalFileName: text('original_file_name').notNull(),
+  storedFileName: text('stored_file_name'),
+  relativePath: text('relative_path'),
+  mimeType: text('mime_type').notNull(),
+  pageCount: integer('page_count').notNull().default(0),
+  importStatus: text('import_status').notNull(),
+  errorMessage: text('error_message'),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+});
+
+export const documentPagesTable = sqliteTable('document_pages', {
+  id: text('id').primaryKey(),
+  documentId: text('document_id').notNull(),
+  pageNumber: integer('page_number').notNull(),
+  textContent: text('text_content').notNull(),
+  textLength: integer('text_length').notNull(),
+  createdAt: integer('created_at').notNull(),
+});
+
+export const documentChunksTable = sqliteTable('document_chunks', {
+  id: text('id').primaryKey(),
+  documentId: text('document_id').notNull(),
+  pageId: text('page_id').notNull(),
+  chunkIndex: integer('chunk_index').notNull(),
+  textContent: text('text_content').notNull(),
+  textLength: integer('text_length').notNull(),
+  createdAt: integer('created_at').notNull(),
+});
+
+export const divisionsTable = sqliteTable('divisions', {
+  id: text('id').primaryKey(),
+  subjectId: text('subject_id').notNull(),
+  title: text('title').notNull(),
+  summary: text('summary').notNull(),
+  keyConceptsJson: text('key_concepts_json').notNull(),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+});
+
+export const divisionSourcePagesTable = sqliteTable('division_source_pages', {
+  id: text('id').primaryKey(),
+  divisionId: text('division_id').notNull(),
+  pageId: text('page_id').notNull(),
+  createdAt: integer('created_at').notNull(),
+});
+
+export const problemTypesTable = sqliteTable('problem_types', {
+  id: text('id').primaryKey(),
+  subjectId: text('subject_id').notNull(),
+  divisionId: text('division_id').notNull(),
+  title: text('title').notNull(),
+  description: text('description').notNull(),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+});
+
+export const unassignedPagesTable = sqliteTable('unassigned_pages', {
+  id: text('id').primaryKey(),
+  subjectId: text('subject_id').notNull(),
+  pageId: text('page_id').notNull(),
+  reason: text('reason'),
+  createdAt: integer('created_at').notNull(),
 });

@@ -34,6 +34,11 @@ const config: ForgeConfig = {
           config: 'vite.preload.config.ts',
           target: 'preload',
         },
+        {
+          entry: 'src/main/documents/import-worker.ts',
+          config: 'vite.main.config.ts',
+          target: 'main',
+        },
       ],
       renderer: [
         {

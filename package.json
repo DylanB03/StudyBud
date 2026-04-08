@@ -6,12 +6,16 @@
   "main": ".vite/build/main.js",
   "private": true,
   "scripts": {
-    "start": "electron-forge start",
-    "package": "electron-forge package",
-    "make": "electron-forge make",
+    "rebuild:native:node": "npm rebuild better-sqlite3",
+    "rebuild:native:electron": "electron-rebuild -f -w better-sqlite3",
+    "start": "npm run rebuild:native:electron && electron-forge start",
+    "dev": "npm run rebuild:native:electron && electron-forge start",
+    "package": "npm run rebuild:native:electron && electron-forge package",
+    "make": "npm run rebuild:native:electron && electron-forge make",
     "publish": "electron-forge publish",
     "lint": "eslint --ext .ts,.tsx .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "npm run rebuild:native:node && vitest run"
   },
   "keywords": [],
   "author": {
@@ -29,6 +33,7 @@
     "@electron-forge/plugin-fuses": "^7.11.1",
     "@electron-forge/plugin-vite": "^7.11.1",
     "@electron/fuses": "^1.8.0",
+    "@electron/rebuild": "^4.0.3",
     "@types/better-sqlite3": "^7.6.13",
     "@types/electron-squirrel-startup": "^1.0.2",
     "@types/react": "^19.2.14",
@@ -39,13 +44,16 @@
     "electron": "41.1.1",
     "eslint": "^8.57.1",
     "eslint-plugin-import": "^2.32.0",
+    "pdf-lib": "^1.17.1",
     "typescript": "^5.6.3",
-    "vite": "^5.4.21"
+    "vite": "^5.4.21",
+    "vitest": "^2.1.9"
   },
   "dependencies": {
     "better-sqlite3": "^12.8.0",
     "drizzle-orm": "^0.45.2",
     "electron-squirrel-startup": "^1.0.1",
+    "pdfjs-dist": "^5.6.205",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "zod": "^4.3.6"
