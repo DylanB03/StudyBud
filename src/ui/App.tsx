@@ -2,6 +2,7 @@ import { FormEvent, Suspense, lazy, useEffect, useState } from 'react';
 
 import type {
   AnalyzeSubjectResult,
+  AiProvider,
   AppInfo,
   DocumentKind,
   SettingsState,
@@ -20,9 +21,21 @@ const PdfViewer = lazy(async () => {
 
 type View = 'library' | 'workspace' | 'settings';
 
+type ActiveAnalysisState = {
+  provider: string;
+  model: string;
+  startedAt: number;
+};
+
 const initialSettings: SettingsState = {
+  aiProvider: 'openai',
   openAiApiKeyConfigured: false,
   encryptionAvailable: false,
+  ollamaBaseUrl: 'http://localhost:11434',
+  ollamaModel: 'qwen3:8b',
+  dataPath: '',
+  defaultDataPath: '',
+  usingCustomDataPath: false,
 };
 
 const formatDate = (isoString: string): string => {
@@ -33,6 +46,16 @@ const formatDate = (isoString: string): string => {
     hour: 'numeric',
     minute: '2-digit',
   });
+};
+
+const formatElapsed = (elapsedMs: number): string => {
+  const totalSeconds = Math.max(0, Math.floor(elapsedMs / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
+  return minutes > 0
+    ? `${minutes}m ${String(seconds).padStart(2, '0')}s`
+    : `${seconds}s`;
 };
 
 const getFirstReadyDocumentId = (
@@ -63,7 +86,16 @@ export const App = () => {
   );
   const [documentBytes, setDocumentBytes] = useState<Uint8Array | null>(null);
   const [subjectName, setSubjectName] = useState('');
+  const [aiProviderInput, setAiProviderInput] = useState<AiProvider>('openai');
   const [apiKeyInput, setApiKeyInput] = useState('');
+  const [ollamaBaseUrlInput, setOllamaBaseUrlInput] = useState(
+    'http://localhost:11434',
+  );
+  const [ollamaModelInput, setOllamaModelInput] = useState('qwen3:8b');
+  const [activeAnalysis, setActiveAnalysis] = useState<ActiveAnalysisState | null>(
+    null,
+  );
+  const [analysisElapsedMs, setAnalysisElapsedMs] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(
     studybud
@@ -117,6 +149,50 @@ export const App = () => {
       cancelled = true;
     };
   }, [studybud]);
+
+  useEffect(() => {
+    setAiProviderInput(settings.aiProvider);
+    setOllamaBaseUrlInput(settings.ollamaBaseUrl);
+    setOllamaModelInput(settings.ollamaModel);
+  }, [settings.aiProvider, settings.ollamaBaseUrl, settings.ollamaModel]);
+
+  useEffect(() => {
+    if (!activeAnalysis) {
+      setAnalysisElapsedMs(0);
+      return;
+    }
+
+    setAnalysisElapsedMs(Date.now() - activeAnalysis.startedAt);
+
+    const intervalId = window.setInterval(() => {
+      setAnalysisElapsedMs(Date.now() - activeAnalysis.startedAt);
+    }, 1000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [activeAnalysis]);
+
+  const reloadDashboardState = async () => {
+    if (!studybud) {
+      return;
+    }
+
+    const [nextInfo, nextSettings, nextSubjects] = await Promise.all([
+      studybud.getAppInfo(),
+      studybud.getSettings(),
+      studybud.listSubjects(),
+    ]);
+
+    setAppInfo(nextInfo);
+    setSettings(nextSettings);
+    setSubjects(nextSubjects);
+    setWorkspace(null);
+    setSelectedDocumentId(null);
+    setDocumentDetail(null);
+    setDocumentBytes(null);
+    setActiveView('library');
+  };
 
   useEffect(() => {
     if (!studybud) {
@@ -248,7 +324,7 @@ export const App = () => {
     }
   };
 
-  const handleSaveApiKey = async (event: FormEvent<HTMLFormElement>) => {
+  const handleSaveAiSettings = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!studybud) {
       return;
@@ -259,7 +335,10 @@ export const App = () => {
 
     try {
       const nextSettings = await studybud.saveSettings({
-        openAiApiKey: apiKeyInput,
+        aiProvider: aiProviderInput,
+        ...(apiKeyInput.trim().length > 0 ? { openAiApiKey: apiKeyInput } : {}),
+        ollamaBaseUrl: ollamaBaseUrlInput,
+        ollamaModel: ollamaModelInput,
       });
       setSettings(nextSettings);
       setApiKeyInput('');
@@ -293,6 +372,56 @@ export const App = () => {
         caughtError instanceof Error
           ? caughtError.message
           : 'Could not clear API key.',
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleChooseDataPath = async () => {
+    if (!studybud) {
+      return;
+    }
+
+    setBusy(true);
+    setError(null);
+
+    try {
+      const nextSettings = await studybud.chooseDataPath();
+      if (!nextSettings) {
+        return;
+      }
+
+      setSettings(nextSettings);
+      await reloadDashboardState();
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : 'Could not change the data directory.',
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleResetDataPath = async () => {
+    if (!studybud) {
+      return;
+    }
+
+    setBusy(true);
+    setError(null);
+
+    try {
+      const nextSettings = await studybud.resetDataPath();
+      setSettings(nextSettings);
+      await reloadDashboardState();
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : 'Could not reset the data directory.',
       );
     } finally {
       setBusy(false);
@@ -342,8 +471,22 @@ export const App = () => {
       return;
     }
 
+    const provider =
+      settings.aiProvider === 'ollama'
+        ? `Ollama (${settings.ollamaBaseUrl})`
+        : 'OpenAI';
+    const model =
+      settings.aiProvider === 'ollama'
+        ? settings.ollamaModel
+        : 'gpt-5.4-mini';
+
     setBusy(true);
     setError(null);
+    setActiveAnalysis({
+      provider,
+      model,
+      startedAt: Date.now(),
+    });
 
     try {
       const result: AnalyzeSubjectResult = await studybud.analyzeSubject({
@@ -368,6 +511,7 @@ export const App = () => {
           : 'Could not analyze subject materials.',
       );
     } finally {
+      setActiveAnalysis(null);
       setBusy(false);
     }
   };
@@ -402,10 +546,21 @@ export const App = () => {
   };
 
   const settingsBadge = !settings.encryptionAvailable
-    ? 'Secure storage unavailable'
-    : settings.openAiApiKeyConfigured
-      ? 'API key configured'
-      : 'API key missing';
+    ? settings.aiProvider === 'openai'
+      ? settings.openAiApiKeyConfigured
+        ? 'Session key active'
+        : 'Session-only key mode'
+      : 'Ollama local provider'
+    : settings.aiProvider === 'openai'
+      ? settings.openAiApiKeyConfigured
+        ? 'API key configured'
+        : 'API key missing'
+      : 'Ollama local provider';
+
+  const analysisReady =
+    settings.aiProvider === 'ollama'
+      ? settings.ollamaModel.trim().length > 0
+      : settings.openAiApiKeyConfigured;
 
   const renderLibrary = () => {
     return (
@@ -467,65 +622,161 @@ export const App = () => {
     return (
       <section className="panel">
         <header className="panel-header">
-          <h2>AI Settings</h2>
+          <h2>Settings</h2>
           <p>
-            StudyBud uses your API key for model calls. The key is encrypted in
-            local storage when OS encryption is available.
+            Configure how StudyBud stores class data and how it connects to AI services.
           </p>
         </header>
 
-        <div className="info-grid">
-          <div>
-            <span className="label">Status</span>
-            <strong>{settingsBadge}</strong>
-          </div>
-          <div>
-            <span className="label">OS Encryption</span>
-            <strong>
-              {settings.encryptionAvailable ? 'Available' : 'Unavailable'}
-            </strong>
-          </div>
-        </div>
+        <section className="settings-card">
+          <header className="settings-card-header">
+            <h3>AI Settings</h3>
+            <p>
+              Choose whether analysis runs through OpenAI or your local Ollama server.
+              Ollama defaults to `localhost:11434` with a local model name you can change.
+            </p>
+          </header>
 
-        {!settings.encryptionAvailable ? (
-          <div className="warning-banner">
-            This device does not currently expose secure OS key storage, so
-            StudyBud will not save API keys until that becomes available.
+          <div className="info-grid">
+            <div>
+              <span className="label">Status</span>
+              <strong>{settingsBadge}</strong>
+            </div>
+            <div>
+              <span className="label">OS Encryption</span>
+              <strong>
+                {settings.encryptionAvailable ? 'Available' : 'Unavailable'}
+              </strong>
+            </div>
           </div>
-        ) : null}
 
-        <form className="stack-form" onSubmit={handleSaveApiKey}>
-          <label htmlFor="open-ai-key">OpenAI API Key</label>
-          <input
-            id="open-ai-key"
-            type="password"
-            value={apiKeyInput}
-            onChange={(event) => setApiKeyInput(event.target.value)}
-            placeholder="sk-..."
-            autoComplete="off"
-            disabled={busy}
-          />
-          <div className="form-actions">
-            <button
-              type="submit"
-              disabled={
-                busy ||
-                apiKeyInput.trim().length === 0 ||
-                !settings.encryptionAvailable
-              }
+          {settings.aiProvider === 'openai' && !settings.encryptionAvailable ? (
+            <div className="warning-banner">
+              This device does not currently expose secure OS key storage, so
+              StudyBud will keep the OpenAI API key in memory only for this app session.
+              It will work until you close the app, but it will not be saved to disk.
+            </div>
+          ) : null}
+
+          <form className="stack-form" onSubmit={handleSaveAiSettings}>
+            <label htmlFor="ai-provider">AI Provider</label>
+            <select
+              id="ai-provider"
+              value={aiProviderInput}
+              onChange={(event) => setAiProviderInput(event.target.value as AiProvider)}
+              disabled={busy}
             >
-              Save Key
+              <option value="openai">OpenAI</option>
+              <option value="ollama">Ollama (local)</option>
+            </select>
+
+            <div className="hint-text">
+              {aiProviderInput === 'ollama'
+                ? 'Local Ollama is used over HTTP and does not require an OpenAI key.'
+                : 'OpenAI uses your stored API key and the default cloud model for analysis.'}
+            </div>
+
+            <label htmlFor="open-ai-key">OpenAI API Key</label>
+            <input
+              id="open-ai-key"
+              type="password"
+              value={apiKeyInput}
+              onChange={(event) => setApiKeyInput(event.target.value)}
+              placeholder="sk-..."
+              autoComplete="off"
+              disabled={busy || aiProviderInput !== 'openai'}
+            />
+            <label htmlFor="ollama-base-url">Ollama Base URL</label>
+            <input
+              id="ollama-base-url"
+              type="text"
+              value={ollamaBaseUrlInput}
+              onChange={(event) => setOllamaBaseUrlInput(event.target.value)}
+              placeholder="http://localhost:11434"
+              autoComplete="off"
+              disabled={busy || aiProviderInput !== 'ollama'}
+            />
+            <label htmlFor="ollama-model">Ollama Model</label>
+            <input
+              id="ollama-model"
+              type="text"
+              value={ollamaModelInput}
+              onChange={(event) => setOllamaModelInput(event.target.value)}
+              placeholder="qwen3:8b"
+              autoComplete="off"
+              disabled={busy || aiProviderInput !== 'ollama'}
+            />
+            <div className="form-actions">
+              <button
+                type="submit"
+                disabled={
+                  busy ||
+                  (aiProviderInput === 'openai' &&
+                    apiKeyInput.trim().length === 0 &&
+                    !settings.openAiApiKeyConfigured) ||
+                  (aiProviderInput === 'ollama' &&
+                    (ollamaBaseUrlInput.trim().length === 0 ||
+                      ollamaModelInput.trim().length === 0))
+                }
+              >
+                Save AI Settings
+              </button>
+              <button
+                type="button"
+                className="ghost-button"
+                disabled={busy || !settings.openAiApiKeyConfigured}
+                onClick={handleClearApiKey}
+              >
+                Clear Stored Key
+              </button>
+            </div>
+          </form>
+        </section>
+
+        <section className="settings-card">
+          <header className="settings-card-header">
+            <h3>Data Path</h3>
+            <p>
+              Choose where StudyBud stores its database, imported documents, and subject workspaces.
+            </p>
+          </header>
+
+          <div className="info-grid">
+            <div>
+              <span className="label">Current Path</span>
+              <code>{settings.dataPath || 'Loading...'}</code>
+            </div>
+            <div>
+              <span className="label">Default Path</span>
+              <code>{settings.defaultDataPath || 'Loading...'}</code>
+            </div>
+          </div>
+
+          <div className="info-grid">
+            <div>
+              <span className="label">Mode</span>
+              <strong>{settings.usingCustomDataPath ? 'Custom Directory' : 'Default Directory'}</strong>
+            </div>
+            <div>
+              <span className="label">Effect</span>
+              <strong>Used for new and reopened StudyBud data</strong>
+            </div>
+          </div>
+
+          <div className="form-actions">
+            <button type="button" disabled={busy} onClick={handleChooseDataPath}>
+              Choose Folder
             </button>
             <button
               type="button"
               className="ghost-button"
-              disabled={busy || !settings.openAiApiKeyConfigured}
-              onClick={handleClearApiKey}
+              disabled={busy || !settings.usingCustomDataPath}
+              onClick={handleResetDataPath}
             >
-              Clear Stored Key
+              Reset To Default
             </button>
           </div>
-        </form>
+        </section>
       </section>
     );
   };
@@ -573,8 +824,8 @@ export const App = () => {
               onClick={() => void handleAnalyzeSubject()}
               disabled={
                 busy ||
-                !settings.openAiApiKeyConfigured ||
                 workspace.documents.every((document) => document.importStatus !== 'ready')
+                || !analysisReady
               }
             >
               Analyze Subject
@@ -648,16 +899,41 @@ export const App = () => {
 
               {workspace.analysisJobs.length > 0 ? (
                 <div className="analysis-job-banner">
-                  <strong>{workspace.analysisJobs[0]?.message}</strong>
+                  <div className="analysis-job-copy">
+                    <strong>{workspace.analysisJobs[0]?.message}</strong>
+                    <div className="analysis-job-meta">
+                      <span>{workspace.analysisJobs[0]?.provider}</span>
+                      <span>{workspace.analysisJobs[0]?.model}</span>
+                      <span>
+                        Started {formatDate(workspace.analysisJobs[0]?.createdAt ?? new Date().toISOString())}
+                      </span>
+                    </div>
+                  </div>
                   <span className={`pill pill-status-${workspace.analysisJobs[0]?.status ?? 'running'}`}>
                     {workspace.analysisJobs[0]?.status ?? 'running'}
                   </span>
                 </div>
               ) : null}
 
-              {!settings.openAiApiKeyConfigured ? (
+              {activeAnalysis ? (
+                <div className="analysis-job-banner">
+                  <div className="analysis-job-copy">
+                    <strong>Analysis request in progress...</strong>
+                    <div className="analysis-job-meta">
+                      <span>{activeAnalysis.provider}</span>
+                      <span>{activeAnalysis.model}</span>
+                      <span>Elapsed {formatElapsed(analysisElapsedMs)}</span>
+                    </div>
+                  </div>
+                  <span className="pill pill-status-running">running</span>
+                </div>
+              ) : null}
+
+              {!analysisReady ? (
                 <div className="empty-state">
-                  Add your OpenAI API key in Settings before running subject analysis.
+                  {settings.aiProvider === 'ollama'
+                    ? 'Set an Ollama model in Settings before running subject analysis.'
+                    : 'Add your OpenAI API key in Settings before running subject analysis.'}
                 </div>
               ) : !workspace.analysis ? (
                 <div className="empty-state">
@@ -819,7 +1095,8 @@ export const App = () => {
     <main className="app-shell">
       <aside className="sidebar">
         <h1>StudyBud</h1>
-        <p className="subtitle">Phase 1 import pipeline</p>
+        <p className="sidebar-version">v{appInfo?.version ?? '...'}</p>
+        <p className="subtitle">Desktop study workspace</p>
         <nav className="nav-list">
           <button
             className={activeView === 'library' ? 'active' : ''}
@@ -847,21 +1124,6 @@ export const App = () => {
       </aside>
 
       <section className="content">
-        <header className="status-bar">
-          <div>
-            <span className="label">Version</span>
-            <strong>{appInfo?.version ?? 'Loading...'}</strong>
-          </div>
-          <div>
-            <span className="label">Subjects</span>
-            <strong>{subjects.length}</strong>
-          </div>
-          <div>
-            <span className="label">Data Path</span>
-            <code>{appInfo?.dataPath ?? 'Loading...'}</code>
-          </div>
-        </header>
-
         {error ? <div className="error-banner">{error}</div> : null}
 
         {activeView === 'library'

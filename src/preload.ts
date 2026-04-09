@@ -14,6 +14,8 @@ const api: StudyBudApi = {
   getSettings: () => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_GET),
   saveSettings: (input: SaveSettingsInput) =>
     ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_SAVE, input),
+  chooseDataPath: () => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_CHOOSE_DATA_PATH),
+  resetDataPath: () => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_RESET_DATA_PATH),
   listSubjects: () => ipcRenderer.invoke(IPC_CHANNELS.SUBJECTS_LIST),
   createSubject: (input: CreateSubjectInput) =>
     ipcRenderer.invoke(IPC_CHANNELS.SUBJECTS_CREATE, input),

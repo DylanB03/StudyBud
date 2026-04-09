@@ -2,6 +2,8 @@ export const IPC_CHANNELS = {
   APP_INFO: 'app:get-info',
   SETTINGS_GET: 'settings:get',
   SETTINGS_SAVE: 'settings:save',
+  SETTINGS_CHOOSE_DATA_PATH: 'settings:choose-data-path',
+  SETTINGS_RESET_DATA_PATH: 'settings:reset-data-path',
   SUBJECTS_LIST: 'subjects:list',
   SUBJECTS_CREATE: 'subjects:create',
   SUBJECTS_WORKSPACE: 'subjects:workspace',
@@ -19,13 +21,24 @@ export type AppInfo = {
   encryptionAvailable: boolean;
 };
 
+export type AiProvider = 'openai' | 'ollama';
+
 export type SettingsState = {
+  aiProvider: AiProvider;
   openAiApiKeyConfigured: boolean;
   encryptionAvailable: boolean;
+  ollamaBaseUrl: string;
+  ollamaModel: string;
+  dataPath: string;
+  defaultDataPath: string;
+  usingCustomDataPath: boolean;
 };
 
 export type SaveSettingsInput = {
+  aiProvider?: AiProvider;
   openAiApiKey?: string;
+  ollamaBaseUrl?: string;
+  ollamaModel?: string;
 };
 
 export type SubjectSummary = {
@@ -70,6 +83,8 @@ export type SubjectAnalysisJobSummary = {
   type: 'subject-ingestion';
   status: JobStatus;
   message: string;
+  provider: string;
+  model: string;
   divisionCount: number;
   problemTypeCount: number;
   unassignedPageCount: number;
@@ -168,6 +183,8 @@ export interface StudyBudApi {
   getAppInfo: () => Promise<AppInfo>;
   getSettings: () => Promise<SettingsState>;
   saveSettings: (input: SaveSettingsInput) => Promise<SettingsState>;
+  chooseDataPath: () => Promise<SettingsState | null>;
+  resetDataPath: () => Promise<SettingsState>;
   listSubjects: () => Promise<SubjectSummary[]>;
   createSubject: (input: CreateSubjectInput) => Promise<SubjectSummary>;
   getSubjectWorkspace: (subjectId: string) => Promise<SubjectWorkspace>;

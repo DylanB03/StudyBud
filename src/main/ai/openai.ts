@@ -1,8 +1,8 @@
 const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses';
 
-export const DEFAULT_INGESTION_MODEL = 'gpt-5.4-mini';
+export const DEFAULT_OPENAI_INGESTION_MODEL = 'gpt-5.4-mini';
 
-type CreateStructuredResponseInput = {
+type CreateOpenAiStructuredResponseInput = {
   apiKey: string;
   model?: string;
   systemPrompt: string;
@@ -65,8 +65,8 @@ const extractOutputText = (responsePayload: unknown): string => {
   return textParts.join('\n');
 };
 
-export const createStructuredResponse = async <T>(
-  input: CreateStructuredResponseInput,
+export const createOpenAiStructuredResponse = async <T>(
+  input: CreateOpenAiStructuredResponseInput,
 ): Promise<T> => {
   const response = await fetch(OPENAI_RESPONSES_URL, {
     method: 'POST',
@@ -75,7 +75,7 @@ export const createStructuredResponse = async <T>(
       Authorization: `Bearer ${input.apiKey}`,
     },
     body: JSON.stringify({
-      model: input.model ?? DEFAULT_INGESTION_MODEL,
+      model: input.model ?? DEFAULT_OPENAI_INGESTION_MODEL,
       reasoning: {
         effort: 'low',
       },

@@ -30,6 +30,7 @@ import { applyContentSecurityPolicy } from './main/security/csp';
 import {
   type AnalyzeSubjectInput,
   type AnalyzeSubjectResult,
+  type AiProvider,
   IPC_CHANNELS,
   type AppInfo,
   type CreateSubjectInput,
@@ -46,6 +47,11 @@ import {
   type SubjectSummary,
   type SubjectWorkspace,
 } from './shared/ipc';
+import {
+  DEFAULT_OLLAMA_BASE_URL,
+  DEFAULT_OLLAMA_INGESTION_MODEL,
+} from './main/ai/ollama';
+import { DEFAULT_OPENAI_INGESTION_MODEL } from './main/ai/openai';
 
 if (started) {
   app.quit();
@@ -56,15 +62,27 @@ if (started) {
 app.disableHardwareAcceleration();
 
 const OPENAI_KEY_SETTING = 'openai_api_key';
+const AI_PROVIDER_SETTING = 'ai_provider';
+const OLLAMA_BASE_URL_SETTING = 'ollama_base_url';
+const OLLAMA_MODEL_SETTING = 'ollama_model';
+const BOOTSTRAP_CONFIG_FILE = 'bootstrap-settings.json';
 
 type AppPaths = {
   dataDir: string;
+  defaultDataDir: string;
   dbPath: string;
   subjectsDir: string;
 };
 
+type BootstrapConfig = {
+  customDataPath?: string;
+};
+
 const saveSettingsSchema = z.object({
+  aiProvider: z.enum(['openai', 'ollama']).optional(),
   openAiApiKey: z.string().max(500).optional(),
+  ollamaBaseUrl: z.string().max(500).optional(),
+  ollamaModel: z.string().max(200).optional(),
 });
 
 const createSubjectSchema = z.object({
@@ -86,6 +104,7 @@ let mainWindow: BrowserWindow | null = null;
 let ipcHandlersRegistered = false;
 let contentSecurityPolicyRegistered = false;
 let initializationPromise: Promise<void> | null = null;
+let sessionOpenAiApiKey: string | null = null;
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 
@@ -103,20 +122,63 @@ const normalizeDialogFilePaths = (filePaths: unknown[]): string[] => {
   });
 };
 
-const ensureAppPaths = (): AppPaths => {
-  const userData = app.getPath('userData');
-  const dataDir = path.join(userData, 'data');
+const getBootstrapConfigPath = (): string => {
+  return path.join(app.getPath('userData'), BOOTSTRAP_CONFIG_FILE);
+};
+
+const readBootstrapConfig = (): BootstrapConfig => {
+  const configPath = getBootstrapConfigPath();
+
+  try {
+    if (!fs.existsSync(configPath)) {
+      return {};
+    }
+
+    const raw = fs.readFileSync(configPath, 'utf8');
+    const parsed = JSON.parse(raw) as BootstrapConfig;
+
+    return typeof parsed.customDataPath === 'string'
+      ? { customDataPath: parsed.customDataPath }
+      : {};
+  } catch {
+    return {};
+  }
+};
+
+const writeBootstrapConfig = (config: BootstrapConfig): void => {
+  const configPath = getBootstrapConfigPath();
+  fs.mkdirSync(path.dirname(configPath), { recursive: true });
+  fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8');
+};
+
+const getDefaultDataDir = (): string => {
+  return path.join(app.getPath('userData'), 'data');
+};
+
+const buildAppPaths = (dataDir: string): AppPaths => {
   const subjectsDir = path.join(dataDir, 'subjects');
   const dbPath = path.join(dataDir, 'studybud.db');
 
   fs.mkdirSync(dataDir, { recursive: true });
   fs.mkdirSync(subjectsDir, { recursive: true });
 
-  appPaths = {
+  return {
     dataDir,
+    defaultDataDir: getDefaultDataDir(),
     dbPath,
     subjectsDir,
   };
+};
+
+const ensureAppPaths = (): AppPaths => {
+  const bootstrapConfig = readBootstrapConfig();
+  const resolvedDataDir =
+    typeof bootstrapConfig.customDataPath === 'string' &&
+    bootstrapConfig.customDataPath.trim().length > 0
+      ? bootstrapConfig.customDataPath
+      : getDefaultDataDir();
+
+  appPaths = buildAppPaths(resolvedDataDir);
 
   return appPaths;
 };
@@ -235,6 +297,8 @@ const mapJob = (job: JobRow): ImportJobSummary => {
 
 const mapAnalysisJob = (job: JobRow): SubjectAnalysisJobSummary => {
   const payload = JSON.parse(job.payload) as {
+    provider?: string;
+    model?: string;
     divisionCount?: number;
     problemTypeCount?: number;
     unassignedPageCount?: number;
@@ -250,6 +314,8 @@ const mapAnalysisJob = (job: JobRow): SubjectAnalysisJobSummary => {
     type: 'subject-ingestion',
     status: job.status as SubjectAnalysisJobSummary['status'],
     message: job.message,
+    provider: payload.provider ?? 'Unknown',
+    model: payload.model ?? 'Unknown',
     divisionCount: payload.divisionCount ?? 0,
     problemTypeCount: payload.problemTypeCount ?? 0,
     unassignedPageCount: payload.unassignedPageCount ?? 0,
@@ -300,21 +366,43 @@ const getDocumentAbsolutePath = (documentId: string): string => {
 
 const getSettingsState = (): SettingsState => {
   const db = getDatabaseOrThrow();
+  const paths = getPathsOrThrow();
   const raw = db.getSetting(OPENAI_KEY_SETTING);
+  const providerRaw = db.getSetting(AI_PROVIDER_SETTING)?.value;
+  const aiProvider: AiProvider =
+    providerRaw === 'ollama' ? 'ollama' : 'openai';
+  const ollamaBaseUrl =
+    db.getSetting(OLLAMA_BASE_URL_SETTING)?.value.trim() ||
+    DEFAULT_OLLAMA_BASE_URL;
+  const ollamaModel =
+    db.getSetting(OLLAMA_MODEL_SETTING)?.value.trim() ||
+    DEFAULT_OLLAMA_INGESTION_MODEL;
   const encryptionAvailable = safeStorage.isEncryptionAvailable();
 
   if (!raw) {
     return {
-      openAiApiKeyConfigured: false,
+      aiProvider,
+      openAiApiKeyConfigured: Boolean(sessionOpenAiApiKey?.trim().length),
       encryptionAvailable,
+      ollamaBaseUrl,
+      ollamaModel,
+      dataPath: paths.dataDir,
+      defaultDataPath: paths.defaultDataDir,
+      usingCustomDataPath: paths.dataDir !== paths.defaultDataDir,
     };
   }
 
   if (!raw.encrypted) {
     db.deleteSetting(OPENAI_KEY_SETTING);
     return {
-      openAiApiKeyConfigured: false,
+      aiProvider,
+      openAiApiKeyConfigured: Boolean(sessionOpenAiApiKey?.trim().length),
       encryptionAvailable,
+      ollamaBaseUrl,
+      ollamaModel,
+      dataPath: paths.dataDir,
+      defaultDataPath: paths.defaultDataDir,
+      usingCustomDataPath: paths.dataDir !== paths.defaultDataDir,
     };
   }
 
@@ -322,13 +410,25 @@ const getSettingsState = (): SettingsState => {
     const encryptedBuffer = Buffer.from(raw.value, 'base64');
     const decrypted = safeStorage.decryptString(encryptedBuffer);
     return {
+      aiProvider,
       openAiApiKeyConfigured: decrypted.trim().length > 0,
       encryptionAvailable,
+      ollamaBaseUrl,
+      ollamaModel,
+      dataPath: paths.dataDir,
+      defaultDataPath: paths.defaultDataDir,
+      usingCustomDataPath: paths.dataDir !== paths.defaultDataDir,
     };
   } catch {
     return {
-      openAiApiKeyConfigured: false,
+      aiProvider,
+      openAiApiKeyConfigured: Boolean(sessionOpenAiApiKey?.trim().length),
       encryptionAvailable,
+      ollamaBaseUrl,
+      ollamaModel,
+      dataPath: paths.dataDir,
+      defaultDataPath: paths.defaultDataDir,
+      usingCustomDataPath: paths.dataDir !== paths.defaultDataDir,
     };
   }
 };
@@ -342,23 +442,42 @@ const storeOpenAiKey = (input: SaveSettingsInput): SettingsState => {
     const encryptionAvailable = safeStorage.isEncryptionAvailable();
 
     if (trimmedKey.length === 0) {
+      sessionOpenAiApiKey = null;
       db.deleteSetting(OPENAI_KEY_SETTING);
     } else {
       if (!encryptionAvailable) {
-        throw new Error(
-          'Secure OS key storage is unavailable, so StudyBud cannot save the API key on this device yet.',
-        );
+        sessionOpenAiApiKey = trimmedKey;
+      } else {
+        sessionOpenAiApiKey = null;
+        const encrypted = safeStorage.encryptString(trimmedKey).toString('base64');
+        db.upsertSetting(OPENAI_KEY_SETTING, encrypted, true);
       }
-
-      const encrypted = safeStorage.encryptString(trimmedKey).toString('base64');
-      db.upsertSetting(OPENAI_KEY_SETTING, encrypted, true);
     }
+  }
+
+  if (typeof parsed.aiProvider !== 'undefined') {
+    db.upsertSetting(AI_PROVIDER_SETTING, parsed.aiProvider, false);
+  }
+
+  if (typeof parsed.ollamaBaseUrl !== 'undefined') {
+    const normalizedBaseUrl =
+      parsed.ollamaBaseUrl.trim().replace(/\/+$/, '') || DEFAULT_OLLAMA_BASE_URL;
+    db.upsertSetting(OLLAMA_BASE_URL_SETTING, normalizedBaseUrl, false);
+  }
+
+  if (typeof parsed.ollamaModel !== 'undefined') {
+    const normalizedModel = parsed.ollamaModel.trim() || DEFAULT_OLLAMA_INGESTION_MODEL;
+    db.upsertSetting(OLLAMA_MODEL_SETTING, normalizedModel, false);
   }
 
   return getSettingsState();
 };
 
 const getStoredOpenAiKeyOrThrow = (): string => {
+  if (sessionOpenAiApiKey && sessionOpenAiApiKey.trim().length > 0) {
+    return sessionOpenAiApiKey.trim();
+  }
+
   const db = getDatabaseOrThrow();
   const raw = db.getSetting(OPENAI_KEY_SETTING);
 
@@ -375,6 +494,100 @@ const getStoredOpenAiKeyOrThrow = (): string => {
   } catch {
     throw new Error('Stored OpenAI API key could not be decrypted.');
   }
+};
+
+const getAiProviderConfigOrThrow = (): {
+  provider: 'openai';
+  apiKey: string;
+  model: string;
+} | {
+  provider: 'ollama';
+  baseUrl: string;
+  model: string;
+} => {
+  const settings = getSettingsState();
+
+  if (settings.aiProvider === 'ollama') {
+    return {
+      provider: 'ollama',
+      baseUrl: settings.ollamaBaseUrl || DEFAULT_OLLAMA_BASE_URL,
+      model: settings.ollamaModel || DEFAULT_OLLAMA_INGESTION_MODEL,
+    };
+  }
+
+  return {
+    provider: 'openai',
+    apiKey: getStoredOpenAiKeyOrThrow(),
+    model: DEFAULT_OPENAI_INGESTION_MODEL,
+  };
+};
+
+const ensureTargetDataDirectoryHasContent = (
+  currentDataDir: string,
+  targetDataDir: string,
+): void => {
+  if (currentDataDir === targetDataDir) {
+    return;
+  }
+
+  const targetExists = fs.existsSync(targetDataDir);
+  const targetHasEntries =
+    targetExists &&
+    fs.existsSync(targetDataDir) &&
+    fs.readdirSync(targetDataDir).length > 0;
+
+  if (targetHasEntries || !fs.existsSync(currentDataDir)) {
+    fs.mkdirSync(targetDataDir, { recursive: true });
+    return;
+  }
+
+  fs.mkdirSync(targetDataDir, { recursive: true });
+  fs.cpSync(currentDataDir, targetDataDir, {
+    recursive: true,
+    force: false,
+    errorOnExist: false,
+  });
+};
+
+const reopenDatabaseAtDataPath = (nextDataDir: string): SettingsState => {
+  const currentDataDir = appPaths?.dataDir ?? getDefaultDataDir();
+  ensureTargetDataDirectoryHasContent(currentDataDir, nextDataDir);
+
+  database?.close();
+  const nextPaths = buildAppPaths(nextDataDir);
+  appPaths = nextPaths;
+  database = new DatabaseService(nextPaths.dbPath);
+  database.reconcileInterruptedImportJobs();
+  initializationPromise = Promise.resolve();
+
+  return getSettingsState();
+};
+
+const chooseDataPath = async (): Promise<SettingsState | null> => {
+  await ensureInitialized();
+
+  const selection = await dialog.showOpenDialog({
+    title: 'Choose StudyBud data folder',
+    properties: ['openDirectory', 'createDirectory'],
+  });
+
+  const nextPath = selection.filePaths[0];
+  if (selection.canceled || typeof nextPath !== 'string' || nextPath.trim().length === 0) {
+    return null;
+  }
+
+  writeBootstrapConfig({
+    customDataPath: nextPath,
+  });
+
+  return reopenDatabaseAtDataPath(nextPath);
+};
+
+const resetDataPath = async (): Promise<SettingsState> => {
+  await ensureInitialized();
+  const defaultDataDir = getDefaultDataDir();
+  writeBootstrapConfig({});
+  return reopenDatabaseAtDataPath(defaultDataDir);
 };
 
 const registerContentSecurityPolicy = (): void => {
@@ -416,6 +629,20 @@ const registerIpcHandlers = (): void => {
     async (_event, input: SaveSettingsInput): Promise<SettingsState> => {
       await ensureInitialized();
       return storeOpenAiKey(input);
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.SETTINGS_CHOOSE_DATA_PATH,
+    async (): Promise<SettingsState | null> => {
+      return chooseDataPath();
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.SETTINGS_RESET_DATA_PATH,
+    async (): Promise<SettingsState> => {
+      return resetDataPath();
     },
   );
 
@@ -526,7 +753,7 @@ const registerIpcHandlers = (): void => {
       }
 
       const result = await analyzeSubjectMaterials({
-        apiKey: getStoredOpenAiKeyOrThrow(),
+        providerConfig: getAiProviderConfigOrThrow(),
         subjectId: parsed.subjectId,
         database: getDatabaseOrThrow(),
       });

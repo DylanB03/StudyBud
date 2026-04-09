@@ -10,7 +10,12 @@ import type {
   SubjectPageContextRow,
   DatabaseService,
 } from '../db/database';
-import { createStructuredResponse, DEFAULT_INGESTION_MODEL } from '../ai/openai';
+import {
+  createStructuredResponse,
+  getResolvedProviderLabel,
+  getResolvedProviderModel,
+  type StructuredAiProviderConfig,
+} from '../ai/provider';
 
 const MAX_PAGES_IN_PROMPT = 80;
 const MAX_PAGE_TEXT_LENGTH = 1500;
@@ -39,7 +44,7 @@ const analysisResponseSchema = z.object({
     .array(
       z.object({
         sourceRef: z.string().min(1),
-        reason: z.string().min(1).max(240).optional(),
+        reason: z.string().min(1).max(240).nullable(),
       }),
     )
     .max(40),
@@ -176,10 +181,12 @@ const analysisSchemaDefinition: Record<string, unknown> = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['sourceRef'],
+        required: ['sourceRef', 'reason'],
         properties: {
           sourceRef: { type: 'string' },
-          reason: { type: 'string' },
+          reason: {
+            type: ['string', 'null'],
+          },
         },
       },
     },
@@ -230,10 +237,9 @@ const buildAnalysisSummaryFromRecord = (record: SubjectAnalysisRecord) => {
 
 export const analyzeSubjectMaterials = async (
   input: {
-    apiKey: string;
+    providerConfig: StructuredAiProviderConfig;
     subjectId: string;
     database: DatabaseService;
-    model?: string;
   },
 ): Promise<{
   job: JobRow;
@@ -249,12 +255,15 @@ export const analyzeSubjectMaterials = async (
   }
 
   const prepared = buildAnalysisPrompt(pages, chunks);
+  const resolvedModel = getResolvedProviderModel(input.providerConfig);
+  const providerLabel = getResolvedProviderLabel(input.providerConfig);
   const analysisJob = input.database.createSubjectIngestionJob({
     id: randomUUID(),
     subjectId: input.subjectId,
     message: 'Analyzing subject structure and problem types...',
     payload: JSON.stringify({
-      model: input.model ?? DEFAULT_INGESTION_MODEL,
+      model: resolvedModel,
+      provider: providerLabel,
       divisionCount: 0,
       problemTypeCount: 0,
       unassignedPageCount: 0,
@@ -263,8 +272,7 @@ export const analyzeSubjectMaterials = async (
 
   try {
     const rawResponse = await createStructuredResponse<AnalysisResponse>({
-      apiKey: input.apiKey,
-      model: input.model ?? DEFAULT_INGESTION_MODEL,
+      providerConfig: input.providerConfig,
       systemPrompt,
       userPrompt: prepared.prompt,
       schemaName: 'subject_division_extraction',
@@ -340,7 +348,8 @@ export const analyzeSubjectMaterials = async (
           : 's'
       }.`,
       payload: JSON.stringify({
-        model: input.model ?? DEFAULT_INGESTION_MODEL,
+        model: resolvedModel,
+        provider: providerLabel,
         divisionCount: summary.divisions.length,
         problemTypeCount: summary.divisions.reduce(
           (count, division) => count + division.problemTypes.length,
@@ -360,7 +369,8 @@ export const analyzeSubjectMaterials = async (
       message:
         error instanceof Error ? error.message : 'Subject analysis failed unexpectedly.',
       payload: JSON.stringify({
-        model: input.model ?? DEFAULT_INGESTION_MODEL,
+        model: resolvedModel,
+        provider: providerLabel,
         divisionCount: 0,
         problemTypeCount: 0,
         unassignedPageCount: 0,

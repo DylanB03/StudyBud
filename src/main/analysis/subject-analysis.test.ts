@@ -108,7 +108,10 @@ describe('analyzeSubjectMaterials', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     const result = await analyzeSubjectMaterials({
-      apiKey: 'test-key',
+      providerConfig: {
+        provider: 'openai',
+        apiKey: 'test-key',
+      },
       subjectId: 'subject-1',
       database,
     });

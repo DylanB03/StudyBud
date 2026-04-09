@@ -6,7 +6,7 @@
   "main": ".vite/build/main.js",
   "private": true,
   "scripts": {
-    "rebuild:native:node": "npm rebuild better-sqlite3",
+    "rebuild:native:node": "npm rebuild better-sqlite3 --build-from-source",
     "rebuild:native:electron": "electron-rebuild -f -w better-sqlite3",
     "start": "npm run rebuild:native:electron && electron-forge start",
     "dev": "npm run rebuild:native:electron && electron-forge start",

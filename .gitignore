@@ -94,3 +94,7 @@ out/
 # test files
 lectures/
 homework/
+
+
+#other
+.codex
