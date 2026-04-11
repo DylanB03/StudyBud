@@ -8,6 +8,10 @@ import {
   IPC_CHANNELS,
   type CreateSubjectInput,
   type ImportDocumentsInput,
+  type ResearchBrowserBoundsInput,
+  type ResearchBrowserNavigationInput,
+  type ResearchBrowserState,
+  type ResearchSearchInput,
   type RevealPracticeAnswerInput,
   type SaveSettingsInput,
   type StudyBudApi,
@@ -39,6 +43,31 @@ const api: StudyBudApi = {
     ipcRenderer.invoke(IPC_CHANNELS.PRACTICE_REVEAL, input),
   deletePracticeSet: (input: DeletePracticeSetInput) =>
     ipcRenderer.invoke(IPC_CHANNELS.PRACTICE_DELETE, input),
+  searchResearch: (input: ResearchSearchInput) =>
+    ipcRenderer.invoke(IPC_CHANNELS.RESEARCH_SEARCH, input),
+  navigateResearchBrowser: (input: ResearchBrowserNavigationInput) =>
+    ipcRenderer.invoke(IPC_CHANNELS.RESEARCH_NAVIGATE, input),
+  goBackResearchBrowser: () => ipcRenderer.invoke(IPC_CHANNELS.RESEARCH_BACK),
+  goForwardResearchBrowser: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.RESEARCH_FORWARD),
+  reloadResearchBrowser: () => ipcRenderer.invoke(IPC_CHANNELS.RESEARCH_RELOAD),
+  setResearchBrowserBounds: (input: ResearchBrowserBoundsInput) =>
+    ipcRenderer.invoke(IPC_CHANNELS.RESEARCH_SET_BOUNDS, input),
+  hideResearchBrowser: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.RESEARCH_HIDE_BROWSER),
+  onResearchBrowserState: (
+    listener: (state: ResearchBrowserState) => void,
+  ) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, state: ResearchBrowserState) => {
+      listener(state);
+    };
+
+    ipcRenderer.on(IPC_CHANNELS.RESEARCH_BROWSER_STATE, wrapped);
+
+    return () => {
+      ipcRenderer.removeListener(IPC_CHANNELS.RESEARCH_BROWSER_STATE, wrapped);
+    };
+  },
   deleteDocument: (documentId: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.DOCUMENTS_DELETE, documentId),
   getDocumentDetail: (documentId: string) =>

@@ -5,6 +5,7 @@ import remarkMath from 'remark-math';
 
 type RichMessageContentProps = {
   content: string;
+  compact?: boolean;
 };
 
 const superscriptChars = '⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁼⁽⁾ⁿⁱ';
@@ -211,9 +212,12 @@ const normalizeMathFriendlyText = (value: string): string => {
     .join('');
 };
 
-export const RichMessageContent = ({ content }: RichMessageContentProps) => {
+export const RichMessageContent = ({
+  content,
+  compact = false,
+}: RichMessageContentProps) => {
   return (
-    <div className="chat-message-rich">
+    <div className={`chat-message-rich${compact ? ' compact' : ''}`}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath]}
         rehypePlugins={[rehypeKatex]}

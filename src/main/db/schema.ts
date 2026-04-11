@@ -102,6 +102,12 @@ export const chatMessagesTable = sqliteTable('chat_messages', {
   content: text('content').notNull(),
   citationsJson: text('citations_json').notNull(),
   followupsJson: text('followups_json').notNull(),
+  suggestedSearchQueriesJson: text('suggested_search_queries_json')
+    .notNull()
+    .default('[]'),
+  suggestedVideoQueriesJson: text('suggested_video_queries_json')
+    .notNull()
+    .default('[]'),
   selectionContextJson: text('selection_context_json'),
   createdAt: integer('created_at').notNull(),
 });

@@ -156,11 +156,11 @@ export const DivisionChatPanel = ({
                     <button
                       key={`${message.id}:${followup}`}
                       type="button"
-                      className="ghost-button"
+                      className="ghost-button chat-followup-button"
                       onClick={() => onUseFollowup(followup)}
                       disabled={chatBusy}
                     >
-                      {followup}
+                      <RichMessageContent content={followup} compact />
                     </button>
                   ))}
                 </div>

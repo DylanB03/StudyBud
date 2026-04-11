@@ -1,7 +1,7 @@
 const COMMON_DIRECTIVES = [
   "default-src 'self'",
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob:",
+  "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
   "object-src 'none'",
   "base-uri 'self'",

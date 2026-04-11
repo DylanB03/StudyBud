@@ -109,6 +109,10 @@ describe('answerDivisionChat', () => {
             'Conditional probability focuses on the reduced sample space after the condition is observed.',
           citationPageRefs: ['PAGE_001', 'PAGE_002'],
           followups: ['Can you show a Bayes theorem example?'],
+          suggestedSearchQueries: [
+            'conditional probability intuitive explanation',
+          ],
+          suggestedVideoQueries: ['conditional probability bayes theorem tutorial'],
         }),
       }),
     });
@@ -135,6 +139,12 @@ describe('answerDivisionChat', () => {
     expect(result.assistantMessage.followups[0]).toBe(
       'Can you show a Bayes theorem example?',
     );
+    expect(result.assistantMessage.suggestedSearchQueries[0]).toContain(
+      'conditional probability',
+    );
+    expect(result.assistantMessage.suggestedVideoQueries[0]).toContain(
+      'bayes theorem',
+    );
 
     const persisted = database.listChatMessagesBySubject(
       'subject-chat',
@@ -143,5 +153,8 @@ describe('answerDivisionChat', () => {
     expect(persisted).toHaveLength(2);
     expect(persisted[0]?.role).toBe('user');
     expect(persisted[1]?.role).toBe('assistant');
+    expect(persisted[1]?.suggestedSearchQueriesJson).toContain(
+      'conditional probability',
+    );
   });
 });

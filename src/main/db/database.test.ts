@@ -365,6 +365,8 @@ describe('DatabaseService', () => {
         content: 'What does convolution mean here?',
         citationsJson: JSON.stringify([]),
         followupsJson: JSON.stringify([]),
+        suggestedSearchQueriesJson: JSON.stringify([]),
+        suggestedVideoQueriesJson: JSON.stringify([]),
         selectionContextJson: null,
       },
       {
@@ -375,6 +377,12 @@ describe('DatabaseService', () => {
         content: 'Convolution combines an input with a system response.',
         citationsJson: JSON.stringify([]),
         followupsJson: JSON.stringify(['Show me an example.']),
+        suggestedSearchQueriesJson: JSON.stringify([
+          'signal processing convolution intuitive explanation',
+        ]),
+        suggestedVideoQueriesJson: JSON.stringify([
+          'convolution signal processing visual explanation',
+        ]),
         selectionContextJson: null,
       },
     ]);
@@ -389,6 +397,7 @@ describe('DatabaseService', () => {
     expect(persisted[0]?.role).toBe('user');
     expect(persisted[1]?.role).toBe('assistant');
     expect(persisted[1]?.content).toContain('Convolution');
+    expect(persisted[1]?.suggestedSearchQueriesJson).toContain('intuitive explanation');
   });
 
   it('persists practice sets and toggles answer visibility', () => {

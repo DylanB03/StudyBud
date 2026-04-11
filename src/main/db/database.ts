@@ -150,6 +150,8 @@ export type ChatMessageRow = {
   content: string;
   citationsJson: string;
   followupsJson: string;
+  suggestedSearchQueriesJson: string;
+  suggestedVideoQueriesJson: string;
   selectionContextJson: string | null;
   createdAt: number;
 };
@@ -430,10 +432,26 @@ export class DatabaseService {
         content TEXT NOT NULL,
         citations_json TEXT NOT NULL,
         followups_json TEXT NOT NULL,
+        suggested_search_queries_json TEXT NOT NULL DEFAULT '[]',
+        suggested_video_queries_json TEXT NOT NULL DEFAULT '[]',
         selection_context_json TEXT,
         created_at INTEGER NOT NULL
       );
     `);
+
+    if (!this.hasColumn('chat_messages', 'suggested_search_queries_json')) {
+      this.sqlite.exec(`
+        ALTER TABLE chat_messages
+        ADD COLUMN suggested_search_queries_json TEXT NOT NULL DEFAULT '[]';
+      `);
+    }
+
+    if (!this.hasColumn('chat_messages', 'suggested_video_queries_json')) {
+      this.sqlite.exec(`
+        ALTER TABLE chat_messages
+        ADD COLUMN suggested_video_queries_json TEXT NOT NULL DEFAULT '[]';
+      `);
+    }
 
     this.sqlite.exec(`
       CREATE INDEX IF NOT EXISTS chat_messages_division_idx

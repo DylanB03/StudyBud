@@ -11,6 +11,8 @@ import type {
   PracticeDifficulty,
   PracticeQuestion,
   PracticeSet,
+  ResearchBrowserState,
+  ResearchSearchResult,
   SelectionContext,
   SettingsState,
   SourceDocumentDetail,
@@ -21,6 +23,7 @@ import type {
 import { CitationPreviewCard } from './CitationPreviewCard';
 import { DivisionChatPanel } from './DivisionChatPanel';
 import { PracticePanel } from './PracticePanel';
+import { ResearchPanel } from './ResearchPanel';
 import { SelectionAskChip } from './SelectionAskChip';
 import { SelectionQuestionPopup } from './SelectionQuestionPopup';
 
@@ -45,6 +48,7 @@ type SelectionPopupPosition = {
   y: number;
 };
 type SelectionUiMode = 'chip' | 'popup';
+type WorkspaceRightTab = 'chat' | 'research';
 
 const DEFAULT_CHAT_PANEL_WIDTH = 380;
 const CHAT_PANEL_MIN_WIDTH = 280;
@@ -167,6 +171,15 @@ const getStudyBudApi = () => {
   return window.studybud ?? null;
 };
 
+const initialResearchBrowserState: ResearchBrowserState = {
+  visible: false,
+  url: '',
+  title: '',
+  canGoBack: false,
+  canGoForward: false,
+  loading: false,
+};
+
 const hasMeaningfulSelection = (): boolean => {
   return (window.getSelection()?.toString().trim().length ?? 0) > 0;
 };
@@ -213,6 +226,17 @@ export const App = () => {
     useState<PracticeDifficulty>('medium');
   const [practiceCount, setPracticeCount] = useState(3);
   const [practiceBusy, setPracticeBusy] = useState(false);
+  const [rightRailTab, setRightRailTab] = useState<WorkspaceRightTab>('chat');
+  const [researchQueryInput, setResearchQueryInput] = useState('');
+  const [researchVideoQueryInput, setResearchVideoQueryInput] = useState('');
+  const [researchBusy, setResearchBusy] = useState(false);
+  const [researchError, setResearchError] = useState<string | null>(null);
+  const [researchResult, setResearchResult] = useState<ResearchSearchResult | null>(
+    null,
+  );
+  const [researchBrowserState, setResearchBrowserState] =
+    useState<ResearchBrowserState>(initialResearchBrowserState);
+  const [researchBrowserUrlInput, setResearchBrowserUrlInput] = useState('');
   const [chatPanelWidth, setChatPanelWidth] = useState<number>(() => {
     if (typeof window === 'undefined') {
       return DEFAULT_CHAT_PANEL_WIDTH;
@@ -233,6 +257,8 @@ export const App = () => {
   const [pendingChatPrompt, setPendingChatPrompt] = useState<string | null>(null);
   const pendingPageSelectionRef = useRef<number | null>(null);
   const workspaceGridRef = useRef<HTMLDivElement | null>(null);
+  const researchBrowserHostRef = useRef<HTMLDivElement | null>(null);
+  const researchPanelRef = useRef<HTMLElement | null>(null);
   const [error, setError] = useState<string | null>(
     studybud
       ? null
@@ -314,11 +340,100 @@ export const App = () => {
   }, [activeAnalysis]);
 
   useEffect(() => {
+    if (!studybud) {
+      return;
+    }
+
+    return studybud.onResearchBrowserState((state) => {
+      setResearchBrowserState(state);
+    });
+  }, [studybud]);
+
+  useEffect(() => {
+    setResearchBrowserUrlInput(researchBrowserState.url);
+  }, [researchBrowserState.url]);
+
+  useEffect(() => {
     window.localStorage.setItem(
       'studybud.chatPanelWidth',
       String(chatPanelWidth),
     );
   }, [chatPanelWidth]);
+
+  useEffect(() => {
+    if (!studybud) {
+      return;
+    }
+
+    const host = researchBrowserHostRef.current;
+    const shouldShowBrowser =
+      activeView === 'workspace' &&
+      rightRailTab === 'research' &&
+      researchBrowserState.visible &&
+      Boolean(host);
+
+    if (!shouldShowBrowser) {
+      if (researchBrowserState.visible) {
+        void studybud.hideResearchBrowser().catch(() => undefined);
+      }
+      return;
+    }
+
+    if (!host) {
+      return;
+    }
+
+    const syncBounds = () => {
+      const target = researchBrowserHostRef.current;
+      if (!target) {
+        return;
+      }
+
+      const rect = target.getBoundingClientRect();
+      if (rect.width < 1 || rect.height < 1) {
+        return;
+      }
+
+      void studybud
+        .setResearchBrowserBounds({
+          x: rect.left,
+          y: rect.top,
+          width: rect.width,
+          height: rect.height,
+          visible: true,
+        })
+        .catch(() => undefined);
+    };
+
+    syncBounds();
+
+    const resizeObserver = new ResizeObserver(() => {
+      syncBounds();
+    });
+    resizeObserver.observe(host);
+
+    const scrollContainer = researchPanelRef.current;
+
+    window.addEventListener('resize', syncBounds);
+    window.addEventListener('scroll', syncBounds, true);
+    scrollContainer?.addEventListener('scroll', syncBounds, {
+      passive: true,
+    });
+
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', syncBounds);
+      window.removeEventListener('scroll', syncBounds, true);
+      scrollContainer?.removeEventListener('scroll', syncBounds);
+    };
+  }, [
+    activeView,
+    chatPanelWidth,
+    researchBrowserState.visible,
+    rightRailTab,
+    studybud,
+    workspace,
+  ]);
 
   useEffect(() => {
     if (!isResizingChatPanel) {
@@ -374,6 +489,8 @@ export const App = () => {
       return;
     }
 
+    await studybud.hideResearchBrowser().catch(() => undefined);
+
     const [nextInfo, nextSettings, nextSubjects] = await Promise.all([
       studybud.getAppInfo(),
       studybud.getSettings(),
@@ -393,6 +510,13 @@ export const App = () => {
     setChatInput('');
     setSelectionDraft(null);
     setSelectionUiMode('chip');
+    setRightRailTab('chat');
+    setResearchQueryInput('');
+    setResearchVideoQueryInput('');
+    setResearchError(null);
+    setResearchResult(null);
+    setResearchBrowserState(initialResearchBrowserState);
+    setResearchBrowserUrlInput('');
     setActiveView('library');
   };
 
@@ -489,6 +613,38 @@ export const App = () => {
     setSelectionPopupPosition(null);
     setSelectionUiMode('chip');
   }, [selectedDivisionId]);
+
+  useEffect(() => {
+    const latestAssistantMessage = [...(workspace?.chatMessages ?? [])]
+      .reverse()
+      .find(
+        (message) =>
+          message.divisionId === selectedDivisionId && message.role === 'assistant',
+      );
+
+    if (!latestAssistantMessage) {
+      return;
+    }
+
+    if (
+      latestAssistantMessage.suggestedSearchQueries.length > 0 &&
+      researchQueryInput.trim().length === 0
+    ) {
+      setResearchQueryInput(latestAssistantMessage.suggestedSearchQueries[0] ?? '');
+    }
+
+    if (
+      latestAssistantMessage.suggestedVideoQueries.length > 0 &&
+      researchVideoQueryInput.trim().length === 0
+    ) {
+      setResearchVideoQueryInput(latestAssistantMessage.suggestedVideoQueries[0] ?? '');
+    }
+  }, [
+    researchQueryInput,
+    researchVideoQueryInput,
+    selectedDivisionId,
+    workspace?.chatMessages,
+  ]);
 
   useEffect(() => {
     if (!currentDivision) {
@@ -639,6 +795,7 @@ export const App = () => {
       );
       setActiveView('workspace');
       setSelectedCitationKey(null);
+      setResearchError(null);
 
       const nextDocumentId =
         preferredDocumentId && nextWorkspace.documents.some((document) => document.id === preferredDocumentId)
@@ -1553,6 +1710,132 @@ export const App = () => {
     );
   };
 
+  const handleSearchResearch = async (
+    queryOverride?: string,
+    videoQueryOverride?: string,
+  ) => {
+    if (!studybud) {
+      return;
+    }
+
+    const nextQuery = (queryOverride ?? researchQueryInput).trim();
+    const nextVideoQuery = (videoQueryOverride ?? researchVideoQueryInput).trim();
+
+    if (!nextQuery) {
+      return;
+    }
+
+    setResearchBusy(true);
+    setResearchError(null);
+    setRightRailTab('research');
+
+    try {
+      const result = await studybud.searchResearch({
+        query: nextQuery,
+        videoQuery: nextVideoQuery.length > 0 ? nextVideoQuery : null,
+      });
+
+      setResearchResult(result);
+      setResearchQueryInput(result.query);
+      setResearchVideoQueryInput(result.videoQuery);
+    } catch (caughtError) {
+      setResearchError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : 'Could not run the research search.',
+      );
+    } finally {
+      setResearchBusy(false);
+    }
+  };
+
+  const handleOpenResearchWebResult = async (url: string) => {
+    if (!studybud) {
+      return;
+    }
+
+    setResearchError(null);
+    setRightRailTab('research');
+
+    try {
+      await studybud.navigateResearchBrowser({ url });
+    } catch (caughtError) {
+      setResearchError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : 'Could not open the research browser.',
+      );
+    }
+  };
+
+  const handleNavigateResearchBrowser = async () => {
+    await handleOpenResearchWebResult(researchBrowserUrlInput);
+  };
+
+  const handleHideResearchBrowser = async () => {
+    if (!studybud) {
+      return;
+    }
+
+    try {
+      await studybud.hideResearchBrowser();
+    } catch (caughtError) {
+      setResearchError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : 'Could not hide the research browser.',
+      );
+    }
+  };
+
+  const handleResearchBrowserBack = async () => {
+    if (!studybud) {
+      return;
+    }
+
+    try {
+      await studybud.goBackResearchBrowser();
+    } catch (caughtError) {
+      setResearchError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : 'Could not navigate back in the research browser.',
+      );
+    }
+  };
+
+  const handleResearchBrowserForward = async () => {
+    if (!studybud) {
+      return;
+    }
+
+    try {
+      await studybud.goForwardResearchBrowser();
+    } catch (caughtError) {
+      setResearchError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : 'Could not navigate forward in the research browser.',
+      );
+    }
+  };
+
+  const handleResearchBrowserReload = async () => {
+    if (!studybud) {
+      return;
+    }
+
+    try {
+      await studybud.reloadResearchBrowser();
+    } catch (caughtError) {
+      setResearchError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : 'Could not reload the research browser.',
+      );
+    }
+  };
+
   const closeSelectionPopup = () => {
     setSelectionDraft(null);
     setSelectionQuestionInput('');
@@ -1856,6 +2139,10 @@ export const App = () => {
     const divisionChatMessages = (workspace.chatMessages ?? []).filter(
       (message) => message.divisionId === selectedDivision?.id,
     );
+    const latestAssistantMessage =
+      [...divisionChatMessages]
+        .reverse()
+        .find((message) => message.role === 'assistant') ?? null;
     const divisionPracticeSets = (workspace.practiceSets ?? []).filter(
       (practiceSet) => practiceSet.divisionId === selectedDivision?.id,
     );
@@ -2322,22 +2609,85 @@ export const App = () => {
           />
 
           <aside className="workspace-chat">
-            <DivisionChatPanel
-              messages={divisionChatMessages}
-              chatInput={chatInput}
-              onChatInputChange={setChatInput}
-              onSubmit={() => void handleAskChat()}
-              chatBusy={chatBusy}
-                    pendingPrompt={pendingChatPrompt}
-                    onUseFollowup={(value) => {
-                      void submitChatPrompt(value, null);
-                    }}
-                    onOpenCitation={openCitationSourcePage}
-                    onSelectCitationText={handleCitationEvidenceSelection}
-                    onSelectMessageText={handleChatMessageSelection}
-                    activeCitationKey={selectedCitationKey}
-                    documentBytesCache={documentBytesCache}
-                  />
+            <div className="workspace-rail-tabs" role="tablist" aria-label="Workspace rail">
+              <button
+                type="button"
+                className={`workspace-rail-tab${
+                  rightRailTab === 'chat' ? ' active' : ''
+                }`}
+                onClick={() => setRightRailTab('chat')}
+              >
+                Chat
+              </button>
+              <button
+                type="button"
+                className={`workspace-rail-tab${
+                  rightRailTab === 'research' ? ' active' : ''
+                }`}
+                onClick={() => setRightRailTab('research')}
+              >
+                Research
+              </button>
+            </div>
+
+            {rightRailTab === 'chat' ? (
+              <DivisionChatPanel
+                messages={divisionChatMessages}
+                chatInput={chatInput}
+                onChatInputChange={setChatInput}
+                onSubmit={() => void handleAskChat()}
+                chatBusy={chatBusy}
+                pendingPrompt={pendingChatPrompt}
+                onUseFollowup={(value) => {
+                  void submitChatPrompt(value, null);
+                }}
+                onOpenCitation={openCitationSourcePage}
+                onSelectCitationText={handleCitationEvidenceSelection}
+                onSelectMessageText={handleChatMessageSelection}
+                activeCitationKey={selectedCitationKey}
+                documentBytesCache={documentBytesCache}
+              />
+            ) : (
+              <ResearchPanel
+                panelRef={researchPanelRef}
+                searchQuery={researchQueryInput}
+                onSearchQueryChange={setResearchQueryInput}
+                videoQuery={researchVideoQueryInput}
+                onVideoQueryChange={setResearchVideoQueryInput}
+                onSearch={() => void handleSearchResearch()}
+                searchBusy={researchBusy}
+                searchError={researchError}
+                searchResult={researchResult}
+                suggestedSearchQueries={
+                  latestAssistantMessage?.suggestedSearchQueries ?? []
+                }
+                suggestedVideoQueries={
+                  latestAssistantMessage?.suggestedVideoQueries ?? []
+                }
+                onUseSuggestedSearch={(query) => {
+                  void handleSearchResearch(query, researchVideoQueryInput);
+                }}
+                onUseSuggestedVideoQuery={(query) => {
+                  const nextQuery = researchQueryInput.trim() || query;
+                  void handleSearchResearch(nextQuery, query);
+                }}
+                onOpenWebResult={(result) => {
+                  void handleOpenResearchWebResult(result.url);
+                }}
+                onOpenVideoResult={(result) => {
+                  window.open(result.url, '_blank', 'noopener,noreferrer');
+                }}
+                browserState={researchBrowserState}
+                browserUrlInput={researchBrowserUrlInput}
+                onBrowserUrlInputChange={setResearchBrowserUrlInput}
+                onNavigateBrowser={() => void handleNavigateResearchBrowser()}
+                onBackBrowser={() => void handleResearchBrowserBack()}
+                onForwardBrowser={() => void handleResearchBrowserForward()}
+                onReloadBrowser={() => void handleResearchBrowserReload()}
+                onHideBrowser={() => void handleHideResearchBrowser()}
+                browserHostRef={researchBrowserHostRef}
+              />
+            )}
           </aside>
         </div>
       </section>

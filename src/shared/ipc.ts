@@ -14,6 +14,14 @@ export const IPC_CHANNELS = {
   PRACTICE_GENERATE: 'practice:generate',
   PRACTICE_REVEAL: 'practice:reveal',
   PRACTICE_DELETE: 'practice:delete',
+  RESEARCH_SEARCH: 'research:search',
+  RESEARCH_NAVIGATE: 'research:navigate',
+  RESEARCH_BACK: 'research:back',
+  RESEARCH_FORWARD: 'research:forward',
+  RESEARCH_RELOAD: 'research:reload',
+  RESEARCH_SET_BOUNDS: 'research:set-bounds',
+  RESEARCH_HIDE_BROWSER: 'research:hide-browser',
+  RESEARCH_BROWSER_STATE: 'research:browser-state',
   DOCUMENTS_DELETE: 'documents:delete',
   DOCUMENTS_DETAIL: 'documents:detail',
   DOCUMENTS_DATA: 'documents:data',
@@ -222,6 +230,8 @@ export type GroundedAnswer = {
   answerMarkdown: string;
   citations: CitationRef[];
   followups: string[];
+  suggestedSearchQueries: string[];
+  suggestedVideoQueries: string[];
 };
 
 export type DivisionChatMessage = {
@@ -232,6 +242,8 @@ export type DivisionChatMessage = {
   content: string;
   citations: CitationRef[];
   followups: string[];
+  suggestedSearchQueries: string[];
+  suggestedVideoQueries: string[];
   selectionContext: SelectionContext | null;
   createdAt: string;
 };
@@ -300,6 +312,58 @@ export type DeletePracticeSetInput = {
   practiceSetId: string;
 };
 
+export type ResearchWebResult = {
+  id: string;
+  title: string;
+  url: string;
+  displayUrl: string;
+  snippet: string;
+  source: string;
+};
+
+export type ResearchVideoResult = {
+  id: string;
+  title: string;
+  url: string;
+  thumbnailUrl: string;
+  channel: string | null;
+  duration: string | null;
+  query: string;
+};
+
+export type ResearchSearchInput = {
+  query: string;
+  videoQuery?: string | null;
+};
+
+export type ResearchSearchResult = {
+  query: string;
+  videoQuery: string;
+  results: ResearchWebResult[];
+  videos: ResearchVideoResult[];
+};
+
+export type ResearchBrowserBoundsInput = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  visible: boolean;
+};
+
+export type ResearchBrowserNavigationInput = {
+  url: string;
+};
+
+export type ResearchBrowserState = {
+  visible: boolean;
+  url: string;
+  title: string;
+  canGoBack: boolean;
+  canGoForward: boolean;
+  loading: boolean;
+};
+
 export interface StudyBudApi {
   getAppInfo: () => Promise<AppInfo>;
   getSettings: () => Promise<SettingsState>;
@@ -318,6 +382,20 @@ export interface StudyBudApi {
     input: RevealPracticeAnswerInput,
   ) => Promise<RevealPracticeAnswerResult>;
   deletePracticeSet: (input: DeletePracticeSetInput) => Promise<void>;
+  searchResearch: (input: ResearchSearchInput) => Promise<ResearchSearchResult>;
+  navigateResearchBrowser: (
+    input: ResearchBrowserNavigationInput,
+  ) => Promise<ResearchBrowserState>;
+  goBackResearchBrowser: () => Promise<ResearchBrowserState>;
+  goForwardResearchBrowser: () => Promise<ResearchBrowserState>;
+  reloadResearchBrowser: () => Promise<ResearchBrowserState>;
+  setResearchBrowserBounds: (
+    input: ResearchBrowserBoundsInput,
+  ) => Promise<ResearchBrowserState>;
+  hideResearchBrowser: () => Promise<ResearchBrowserState>;
+  onResearchBrowserState: (
+    listener: (state: ResearchBrowserState) => void,
+  ) => () => void;
   deleteDocument: (documentId: string) => Promise<void>;
   getDocumentDetail: (documentId: string) => Promise<SourceDocumentDetail>;
   readDocumentData: (documentId: string) => Promise<Uint8Array>;

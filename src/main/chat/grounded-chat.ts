@@ -30,6 +30,8 @@ const groundedAnswerSchema = z.object({
   answerMarkdown: z.string().min(1).max(4000),
   citationPageRefs: z.array(z.string().min(1)).max(8),
   followups: z.array(z.string().min(1).max(160)).max(4),
+  suggestedSearchQueries: z.array(z.string().min(1).max(160)).max(4),
+  suggestedVideoQueries: z.array(z.string().min(1).max(160)).max(4),
 });
 
 type GroundedAnswerModel = z.infer<typeof groundedAnswerSchema>;
@@ -37,7 +39,13 @@ type GroundedAnswerModel = z.infer<typeof groundedAnswerSchema>;
 const groundedAnswerSchemaDefinition: Record<string, unknown> = {
   type: 'object',
   additionalProperties: false,
-  required: ['answerMarkdown', 'citationPageRefs', 'followups'],
+  required: [
+    'answerMarkdown',
+    'citationPageRefs',
+    'followups',
+    'suggestedSearchQueries',
+    'suggestedVideoQueries',
+  ],
   properties: {
     answerMarkdown: { type: 'string' },
     citationPageRefs: {
@@ -46,6 +54,16 @@ const groundedAnswerSchemaDefinition: Record<string, unknown> = {
       items: { type: 'string' },
     },
     followups: {
+      type: 'array',
+      maxItems: 4,
+      items: { type: 'string' },
+    },
+    suggestedSearchQueries: {
+      type: 'array',
+      maxItems: 4,
+      items: { type: 'string' },
+    },
+    suggestedVideoQueries: {
       type: 'array',
       maxItems: 4,
       items: { type: 'string' },
@@ -61,6 +79,9 @@ const groundedChatSystemPrompt = [
   'Prefer concise explanations with concrete references to the cited material.',
   'Do not mention PAGE refs, citation ids, or source labels in the visible answer text.',
   'Keep all source attribution in citationPageRefs only so the UI can show grounding separately.',
+  'Return 1 to 4 suggestedSearchQueries that would help the student read further on the web.',
+  'Return 1 to 4 suggestedVideoQueries that would help the student find relevant explainer videos.',
+  'Make search and video suggestions concrete, topic-specific, and aligned to the current division.',
   'When you write mathematics, format it as LaTeX using $...$ for inline math and $$...$$ for displayed equations.',
   'Use ASCII math notation inside LaTeX, such as N_1, x^2, \\frac{a}{b}, and \\times.',
   'Do not emit raw LaTeX commands outside math delimiters unless you are showing literal code.',
@@ -120,6 +141,14 @@ const mapChatMessageRow = (row: ChatMessageRow): DivisionChatMessage => {
     content: row.content,
     citations: parseJsonArray<CitationRef>(row.citationsJson, []),
     followups: parseJsonArray<string>(row.followupsJson, []),
+    suggestedSearchQueries: parseJsonArray<string>(
+      row.suggestedSearchQueriesJson,
+      [],
+    ),
+    suggestedVideoQueries: parseJsonArray<string>(
+      row.suggestedVideoQueriesJson,
+      [],
+    ),
     selectionContext: row.selectionContextJson
       ? (JSON.parse(row.selectionContextJson) as SelectionContext)
       : null,
@@ -352,6 +381,8 @@ export const answerDivisionChat = async (input: {
       content: input.prompt.trim(),
       citationsJson: JSON.stringify([]),
       followupsJson: JSON.stringify([]),
+      suggestedSearchQueriesJson: JSON.stringify([]),
+      suggestedVideoQueriesJson: JSON.stringify([]),
       selectionContextJson: input.selectionContext
         ? JSON.stringify(input.selectionContext)
         : null,
@@ -364,6 +395,8 @@ export const answerDivisionChat = async (input: {
       content: sanitizedAnswerMarkdown,
       citationsJson: JSON.stringify(citations),
       followupsJson: JSON.stringify(parsed.followups),
+      suggestedSearchQueriesJson: JSON.stringify(parsed.suggestedSearchQueries),
+      suggestedVideoQueriesJson: JSON.stringify(parsed.suggestedVideoQueries),
       selectionContextJson: input.selectionContext
         ? JSON.stringify(input.selectionContext)
         : null,
@@ -382,6 +415,8 @@ export const answerDivisionChat = async (input: {
       answerMarkdown: sanitizedAnswerMarkdown,
       citations,
       followups: parsed.followups,
+      suggestedSearchQueries: parsed.suggestedSearchQueries,
+      suggestedVideoQueries: parsed.suggestedVideoQueries,
     },
   };
 };

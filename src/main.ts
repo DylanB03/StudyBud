@@ -34,6 +34,8 @@ import {
   type SubjectRow,
 } from './main/db/database';
 import { runImportInUtilityProcess } from './main/documents/import-process';
+import { ResearchBrowserController } from './main/research/browser';
+import { searchResearch } from './main/research/search';
 import { applyContentSecurityPolicy } from './main/security/csp';
 import {
   type ChatAskInput,
@@ -51,6 +53,11 @@ import {
   type ImportDocumentsInput,
   type ImportDocumentsResult,
   type ImportJobSummary,
+  type ResearchBrowserBoundsInput,
+  type ResearchBrowserNavigationInput,
+  type ResearchBrowserState,
+  type ResearchSearchInput,
+  type ResearchSearchResult,
   type SubjectAnalysisJobSummary,
   type SaveSettingsInput,
   type SettingsState,
@@ -158,12 +165,30 @@ const deletePracticeSetSchema = z.object({
   practiceSetId: z.string().uuid(),
 });
 
+const researchSearchSchema = z.object({
+  query: z.string().trim().min(1).max(240),
+  videoQuery: z.string().trim().min(1).max(240).optional().nullable(),
+});
+
+const researchBrowserNavigationSchema = z.object({
+  url: z.string().trim().min(1).max(2000),
+});
+
+const researchBrowserBoundsSchema = z.object({
+  x: z.number().finite(),
+  y: z.number().finite(),
+  width: z.number().finite().min(0),
+  height: z.number().finite().min(0),
+  visible: z.boolean(),
+});
+
 let appPaths: AppPaths | null = null;
 let database: DatabaseService | null = null;
 let mainWindow: BrowserWindow | null = null;
 let contentSecurityPolicyRegistered = false;
 let initializationPromise: Promise<void> | null = null;
 let sessionOpenAiApiKey: string | null = null;
+let researchBrowser: ResearchBrowserController | null = null;
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 
@@ -179,6 +204,14 @@ const normalizeDialogFilePaths = (filePaths: unknown[]): string[] => {
   return filePaths.filter((filePath): filePath is string => {
     return typeof filePath === 'string' && filePath.trim().length > 0;
   });
+};
+
+const getResearchBrowserOrThrow = (): ResearchBrowserController => {
+  if (!researchBrowser) {
+    throw new Error('Research browser is not initialized');
+  }
+
+  return researchBrowser;
 };
 
 const getBootstrapConfigPath = (): string => {
@@ -961,6 +994,74 @@ const registerIpcHandlers = (): void => {
   );
 
   ipcMain.handle(
+    IPC_CHANNELS.RESEARCH_SEARCH,
+    async (_event, input: ResearchSearchInput): Promise<ResearchSearchResult> => {
+      await ensureInitialized();
+      const parsed = researchSearchSchema.parse(input);
+      return searchResearch({
+        query: parsed.query,
+        videoQuery: parsed.videoQuery ?? null,
+      });
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.RESEARCH_NAVIGATE,
+    async (
+      _event,
+      input: ResearchBrowserNavigationInput,
+    ): Promise<ResearchBrowserState> => {
+      await ensureInitialized();
+      const parsed = researchBrowserNavigationSchema.parse(input);
+      return getResearchBrowserOrThrow().navigate(parsed);
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.RESEARCH_BACK,
+    async (): Promise<ResearchBrowserState> => {
+      await ensureInitialized();
+      return getResearchBrowserOrThrow().goBack();
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.RESEARCH_FORWARD,
+    async (): Promise<ResearchBrowserState> => {
+      await ensureInitialized();
+      return getResearchBrowserOrThrow().goForward();
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.RESEARCH_RELOAD,
+    async (): Promise<ResearchBrowserState> => {
+      await ensureInitialized();
+      return getResearchBrowserOrThrow().reload();
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.RESEARCH_SET_BOUNDS,
+    async (
+      _event,
+      input: ResearchBrowserBoundsInput,
+    ): Promise<ResearchBrowserState> => {
+      await ensureInitialized();
+      const parsed = researchBrowserBoundsSchema.parse(input);
+      return getResearchBrowserOrThrow().setBounds(parsed);
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.RESEARCH_HIDE_BROWSER,
+    async (): Promise<ResearchBrowserState> => {
+      await ensureInitialized();
+      return getResearchBrowserOrThrow().hide();
+    },
+  );
+
+  ipcMain.handle(
     IPC_CHANNELS.DOCUMENTS_DELETE,
     async (_event, documentId: string): Promise<void> => {
       await ensureInitialized();
@@ -1074,6 +1175,7 @@ const createWindow = () => {
   });
 
   mainWindow.on('closed', () => {
+    researchBrowser?.hide();
     mainWindow = null;
   });
 
@@ -1099,6 +1201,14 @@ app
   .whenReady()
   .then(async () => {
     await ensureInitialized();
+    researchBrowser = new ResearchBrowserController({
+      windowProvider: () => mainWindow,
+      emitState: (state) => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send(IPC_CHANNELS.RESEARCH_BROWSER_STATE, state);
+        }
+      },
+    });
     createWindow();
   })
   .catch((error) => {
