@@ -22,6 +22,11 @@ type PdfViewerProps = {
   pages: DocumentPageSummary[];
   selectedPageNumber: number;
   onSelectPage: (pageNumber: number) => void;
+  focusText?: string | null;
+};
+
+const clonePdfBytes = (bytes: Uint8Array): Uint8Array => {
+  return bytes.slice();
 };
 
 const renderPageToCanvas = async (
@@ -128,6 +133,7 @@ export const PdfViewer = ({
   pages,
   selectedPageNumber,
   onSelectPage,
+  focusText = null,
 }: PdfViewerProps) => {
   const [pdfDocument, setPdfDocument] = useState<PDFDocumentProxy | null>(null);
   const [viewerError, setViewerError] = useState<string | null>(null);
@@ -167,7 +173,7 @@ export const PdfViewer = ({
 
       try {
         loadingTask = getDocument({
-          data: documentBytes,
+          data: clonePdfBytes(documentBytes),
           isEvalSupported: false,
         });
         nextDocument = await loadingTask.promise;
@@ -269,6 +275,11 @@ export const PdfViewer = ({
           <strong>Page {selectedPageNumber}</strong>
           <span>{pages.length} total pages</span>
         </div>
+        {focusText ? (
+          <div className="pdf-focus-banner">
+            Focused citation: {focusText}
+          </div>
+        ) : null}
         <canvas ref={pageCanvasRef} className="pdf-page-canvas" />
       </section>
     </div>

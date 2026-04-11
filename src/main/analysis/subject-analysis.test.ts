@@ -120,6 +120,12 @@ describe('analyzeSubjectMaterials', () => {
     expect(result.analysis.divisions).toHaveLength(1);
     expect(result.analysis.divisions[0]?.title).toBe('Vector Spaces');
     expect(result.analysis.divisions[0]?.sourcePages).toHaveLength(2);
+    expect(result.analysis.divisions[0]?.sourcePages[0]?.excerptText).toContain(
+      'Vectors and span',
+    );
+    expect(result.analysis.divisions[0]?.sourcePages[0]?.highlightText).toContain(
+      'Vectors and span',
+    );
     expect(result.analysis.divisions[0]?.problemTypes[0]?.title).toBe('Determine span');
     expect(result.job.status).toBe('completed');
   });

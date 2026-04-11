@@ -19,6 +19,14 @@ import {
   getPersistedSubjectAnalysisSummary,
 } from './main/analysis/subject-analysis';
 import {
+  answerDivisionChat,
+  mapPersistedDivisionChatMessages,
+} from './main/chat/grounded-chat';
+import {
+  generatePracticeSet,
+  mapPersistedPracticeSets,
+} from './main/practice/practice-generation';
+import {
   type DocumentPageRow,
   type JobRow,
   DatabaseService,
@@ -28,9 +36,13 @@ import {
 import { runImportInUtilityProcess } from './main/documents/import-process';
 import { applyContentSecurityPolicy } from './main/security/csp';
 import {
+  type ChatAskInput,
+  type ChatAskResult,
   type AnalyzeSubjectInput,
   type AnalyzeSubjectResult,
   type AiProvider,
+  type GeneratePracticeInput,
+  type GeneratePracticeResult,
   IPC_CHANNELS,
   type AppInfo,
   type CreateSubjectInput,
@@ -42,10 +54,13 @@ import {
   type SubjectAnalysisJobSummary,
   type SaveSettingsInput,
   type SettingsState,
+  type SelectionContext,
   type SourceDocumentDetail,
   type SourceDocumentSummary,
   type SubjectSummary,
   type SubjectWorkspace,
+  type RevealPracticeAnswerInput,
+  type RevealPracticeAnswerResult,
 } from './shared/ipc';
 import {
   DEFAULT_OLLAMA_BASE_URL,
@@ -98,10 +113,47 @@ const analyzeSubjectSchema = z.object({
   subjectId: z.string().uuid(),
 });
 
+const selectionContextSchema = z.object({
+  kind: z.enum([
+    'division-summary',
+    'page-text',
+    'practice-question',
+    'practice-answer',
+  ]),
+  subjectId: z.string().uuid(),
+  divisionId: z.string().uuid(),
+  selectedText: z.string().trim().min(1).max(4000),
+  surroundingText: z.string().trim().min(1).max(12000),
+  sourcePageIds: z.array(z.string()).max(32),
+  pageId: z.string().optional().nullable(),
+  documentId: z.string().optional().nullable(),
+  documentName: z.string().optional().nullable(),
+  documentKind: z.enum(['lecture', 'homework']).optional().nullable(),
+  pageNumber: z.number().int().positive().optional().nullable(),
+});
+
+const chatAskSchema = z.object({
+  subjectId: z.string().uuid(),
+  divisionId: z.string().uuid(),
+  prompt: z.string().trim().min(1).max(2000),
+  selectionContext: selectionContextSchema.optional().nullable(),
+});
+
+const generatePracticeSchema = z.object({
+  subjectId: z.string().uuid(),
+  divisionId: z.string().uuid(),
+  problemTypeId: z.string().uuid(),
+  difficulty: z.enum(['easy', 'medium', 'hard']),
+  count: z.number().int().min(1).max(8),
+});
+
+const revealPracticeAnswerSchema = z.object({
+  questionId: z.string().uuid(),
+});
+
 let appPaths: AppPaths | null = null;
 let database: DatabaseService | null = null;
 let mainWindow: BrowserWindow | null = null;
-let ipcHandlersRegistered = false;
 let contentSecurityPolicyRegistered = false;
 let initializationPromise: Promise<void> | null = null;
 let sessionOpenAiApiKey: string | null = null;
@@ -261,6 +313,7 @@ const mapPage = (page: DocumentPageRow): DocumentPageSummary => {
     id: page.id,
     pageNumber: page.pageNumber,
     textLength: page.textLength,
+    textContent: page.textContent,
     previewText:
       page.textContent.length > 180
         ? `${page.textContent.slice(0, 180).trim()}...`
@@ -345,6 +398,10 @@ const getSubjectWorkspace = (subjectId: string): SubjectWorkspace => {
         ? persisted
         : null;
     })(),
+    chatMessages: mapPersistedDivisionChatMessages(
+      db.listChatMessagesBySubject(subjectId),
+    ),
+    practiceSets: mapPersistedPracticeSets(db.listPracticeSetsBySubject(subjectId)),
   };
 };
 
@@ -602,11 +659,9 @@ const registerContentSecurityPolicy = (): void => {
 };
 
 const registerIpcHandlers = (): void => {
-  if (ipcHandlersRegistered) {
-    return;
+  for (const channel of Object.values(IPC_CHANNELS)) {
+    ipcMain.removeHandler(channel);
   }
-
-  ipcHandlersRegistered = true;
 
   ipcMain.handle(IPC_CHANNELS.APP_INFO, async (): Promise<AppInfo> => {
     await ensureInitialized();
@@ -670,6 +725,26 @@ const registerIpcHandlers = (): void => {
         fs.rmSync(subjectDir, { recursive: true, force: true });
         throw error;
       }
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.SUBJECTS_DELETE,
+    async (_event, subjectId: string): Promise<void> => {
+      await ensureInitialized();
+      const db = getDatabaseOrThrow();
+      const paths = getPathsOrThrow();
+      const deletedSubject = db.deleteSubject(subjectId);
+
+      if (!deletedSubject) {
+        throw new Error('Subject not found');
+      }
+
+      const subjectDir = path.join(paths.subjectsDir, subjectId);
+      await fs.promises.rm(subjectDir, {
+        recursive: true,
+        force: true,
+      }).catch(() => undefined);
     },
   );
 
@@ -761,6 +836,106 @@ const registerIpcHandlers = (): void => {
       return {
         job: mapAnalysisJob(result.job),
         analysis: result.analysis,
+      };
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.CHAT_ASK,
+    async (_event, input: ChatAskInput): Promise<ChatAskResult> => {
+      await ensureInitialized();
+      const parsed = chatAskSchema.parse(input);
+      const subject = getDatabaseOrThrow().getSubjectById(parsed.subjectId);
+
+      if (!subject) {
+        throw new Error('Subject not found');
+      }
+
+      if (
+        parsed.selectionContext &&
+        (parsed.selectionContext.subjectId !== parsed.subjectId ||
+          parsed.selectionContext.divisionId !== parsed.divisionId)
+      ) {
+        throw new Error('Selection context does not match the active subject/division.');
+      }
+
+      const result = await answerDivisionChat({
+        providerConfig: getAiProviderConfigOrThrow(),
+        subjectId: parsed.subjectId,
+        divisionId: parsed.divisionId,
+        prompt: parsed.prompt,
+        selectionContext: (parsed.selectionContext ?? null) as SelectionContext | null,
+        database: getDatabaseOrThrow(),
+      });
+
+      return {
+        userMessage: result.userMessage,
+        assistantMessage: result.assistantMessage,
+        answer: result.answer,
+      };
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.PRACTICE_GENERATE,
+    async (_event, input: GeneratePracticeInput): Promise<GeneratePracticeResult> => {
+      await ensureInitialized();
+      const parsed = generatePracticeSchema.parse(input);
+      const db = getDatabaseOrThrow();
+      const subject = db.getSubjectById(parsed.subjectId);
+
+      if (!subject) {
+        throw new Error('Subject not found');
+      }
+
+      const practiceSet = await generatePracticeSet({
+        providerConfig: getAiProviderConfigOrThrow(),
+        subjectId: parsed.subjectId,
+        divisionId: parsed.divisionId,
+        problemTypeId: parsed.problemTypeId,
+        difficulty: parsed.difficulty,
+        count: parsed.count,
+        database: db,
+      });
+
+      return {
+        practiceSet,
+      };
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.PRACTICE_REVEAL,
+    async (
+      _event,
+      input: RevealPracticeAnswerInput,
+    ): Promise<RevealPracticeAnswerResult> => {
+      await ensureInitialized();
+      const parsed = revealPracticeAnswerSchema.parse(input);
+      const db = getDatabaseOrThrow();
+      const question = db.revealPracticeQuestion(parsed.questionId);
+
+      if (!question) {
+        throw new Error('Practice question not found');
+      }
+
+      const practiceSetRecord = db.getPracticeSetByQuestionId(parsed.questionId);
+
+      if (!practiceSetRecord) {
+        throw new Error('Practice set not found for the requested question');
+      }
+
+      return {
+        practiceSetId: practiceSetRecord.practiceSet.id,
+        question: {
+          id: question.id,
+          questionIndex: question.questionIndex,
+          prompt: question.prompt,
+          answer: question.answer,
+          revealed: question.revealed,
+          createdAt: formatTimestamp(question.createdAt),
+          updatedAt: formatTimestamp(question.updatedAt),
+        },
       };
     },
   );

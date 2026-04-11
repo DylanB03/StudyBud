@@ -16,6 +16,7 @@ import {
   getResolvedProviderModel,
   type StructuredAiProviderConfig,
 } from '../ai/provider';
+import { extractCitationExcerpt } from './citation-excerpts';
 
 const MAX_PAGES_IN_PROMPT = 80;
 const MAX_PAGE_TEXT_LENGTH = 1500;
@@ -210,13 +211,25 @@ const buildAnalysisSummaryFromRecord = (record: SubjectAnalysisRecord) => {
       title: divisionRecord.division.title,
       summary: divisionRecord.division.summary,
       keyConcepts: divisionRecord.keyConcepts,
-      sourcePages: divisionRecord.sourcePages.map((page) => ({
-        pageId: page.pageId,
-        documentId: page.documentId,
-        documentName: page.documentName,
-        documentKind: page.documentKind as 'lecture' | 'homework',
-        pageNumber: page.pageNumber,
-      })),
+      sourcePages: divisionRecord.sourcePages.map((page) => {
+        const excerpt = extractCitationExcerpt(page.textContent, [
+          divisionRecord.division.title,
+          divisionRecord.division.summary,
+          ...divisionRecord.keyConcepts,
+        ]);
+
+        return {
+          pageId: page.pageId,
+          documentId: page.documentId,
+          documentName: page.documentName,
+          documentKind: page.documentKind as 'lecture' | 'homework',
+          pageNumber: page.pageNumber,
+          excerptText: excerpt.excerptText,
+          highlightText: excerpt.highlightText,
+          thumbnailAssetPath: null,
+          textBounds: null,
+        };
+      }),
       problemTypes: divisionRecord.problemTypes.map((problemType) => ({
         id: problemType.id,
         title: problemType.title,

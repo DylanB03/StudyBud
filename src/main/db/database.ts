@@ -5,11 +5,14 @@ import type Database from 'better-sqlite3';
 import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
 
 import {
+  chatMessagesTable,
   documentChunksTable,
   documentPagesTable,
   divisionsTable,
   divisionSourcePagesTable,
   jobsTable,
+  practiceQuestionsTable,
+  practiceSetsTable,
   problemTypesTable,
   settingsTable,
   sourceDocumentsTable,
@@ -28,6 +31,9 @@ const schema = {
   divisionSourcePagesTable,
   problemTypesTable,
   unassignedPagesTable,
+  chatMessagesTable,
+  practiceSetsTable,
+  practiceQuestionsTable,
 };
 
 const runtimeRequire = createRequire(__filename);
@@ -134,6 +140,46 @@ export type UnassignedPageRow = {
   createdAt: number;
 };
 
+export type ChatMessageRow = {
+  id: string;
+  subjectId: string;
+  divisionId: string;
+  role: string;
+  content: string;
+  citationsJson: string;
+  followupsJson: string;
+  selectionContextJson: string | null;
+  createdAt: number;
+};
+
+export type PracticeSetRow = {
+  id: string;
+  subjectId: string;
+  divisionId: string;
+  problemTypeId: string;
+  problemTypeTitle: string;
+  difficulty: string;
+  questionCount: number;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type PracticeQuestionRow = {
+  id: string;
+  practiceSetId: string;
+  questionIndex: number;
+  prompt: string;
+  answer: string;
+  revealed: boolean;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type PracticeSetRecord = {
+  practiceSet: PracticeSetRow;
+  questions: PracticeQuestionRow[];
+};
+
 export type SubjectPageContextRow = {
   pageId: string;
   documentId: string;
@@ -167,6 +213,13 @@ export type SubjectAnalysisRecord = {
     row: UnassignedPageRow;
     page: SubjectPageContextRow;
   }>;
+};
+
+export type InsertChatMessageInput = Omit<ChatMessageRow, 'createdAt'>;
+
+export type InsertPracticeSetInput = {
+  practiceSet: Omit<PracticeSetRow, 'createdAt' | 'updatedAt'>;
+  questions: Array<Omit<PracticeQuestionRow, 'practiceSetId' | 'createdAt' | 'updatedAt'>>;
 };
 
 export type InsertImportedDocumentInput = {
@@ -363,6 +416,62 @@ export class DatabaseService {
       CREATE INDEX IF NOT EXISTS unassigned_pages_subject_idx
       ON unassigned_pages(subject_id, page_id);
     `);
+
+    this.sqlite.exec(`
+      CREATE TABLE IF NOT EXISTS chat_messages (
+        id TEXT PRIMARY KEY,
+        subject_id TEXT NOT NULL,
+        division_id TEXT NOT NULL,
+        role TEXT NOT NULL,
+        content TEXT NOT NULL,
+        citations_json TEXT NOT NULL,
+        followups_json TEXT NOT NULL,
+        selection_context_json TEXT,
+        created_at INTEGER NOT NULL
+      );
+    `);
+
+    this.sqlite.exec(`
+      CREATE INDEX IF NOT EXISTS chat_messages_division_idx
+      ON chat_messages(subject_id, division_id, created_at);
+    `);
+
+    this.sqlite.exec(`
+      CREATE TABLE IF NOT EXISTS practice_sets (
+        id TEXT PRIMARY KEY,
+        subject_id TEXT NOT NULL,
+        division_id TEXT NOT NULL,
+        problem_type_id TEXT NOT NULL,
+        problem_type_title TEXT NOT NULL,
+        difficulty TEXT NOT NULL,
+        question_count INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+    `);
+
+    this.sqlite.exec(`
+      CREATE INDEX IF NOT EXISTS practice_sets_division_idx
+      ON practice_sets(subject_id, division_id, created_at);
+    `);
+
+    this.sqlite.exec(`
+      CREATE TABLE IF NOT EXISTS practice_questions (
+        id TEXT PRIMARY KEY,
+        practice_set_id TEXT NOT NULL,
+        question_index INTEGER NOT NULL,
+        prompt TEXT NOT NULL,
+        answer TEXT NOT NULL,
+        revealed INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+    `);
+
+    this.sqlite.exec(`
+      CREATE INDEX IF NOT EXISTS practice_questions_set_idx
+      ON practice_questions(practice_set_id, question_index);
+    `);
   }
 
   getSetting(key: string): SettingRow | null {
@@ -435,6 +544,96 @@ export class DatabaseService {
     return subject;
   }
 
+  deleteSubject(subjectId: string): SubjectRow | null {
+    const subject = this.getSubjectById(subjectId);
+
+    if (!subject) {
+      return null;
+    }
+
+    const divisionIds = this.db
+      .select({ id: divisionsTable.id })
+      .from(divisionsTable)
+      .where(eq(divisionsTable.subjectId, subjectId))
+      .all()
+      .map((row) => row.id);
+
+    const documentIds = this.db
+      .select({ id: sourceDocumentsTable.id })
+      .from(sourceDocumentsTable)
+      .where(eq(sourceDocumentsTable.subjectId, subjectId))
+      .all()
+      .map((row) => row.id);
+
+    const transaction = this.sqlite.transaction(() => {
+      for (const divisionId of divisionIds) {
+        this.db
+          .delete(divisionSourcePagesTable)
+          .where(eq(divisionSourcePagesTable.divisionId, divisionId))
+          .run();
+      }
+
+      for (const documentId of documentIds) {
+        this.db
+          .delete(documentChunksTable)
+          .where(eq(documentChunksTable.documentId, documentId))
+          .run();
+        this.db
+          .delete(documentPagesTable)
+          .where(eq(documentPagesTable.documentId, documentId))
+          .run();
+      }
+
+      this.db
+        .delete(problemTypesTable)
+        .where(eq(problemTypesTable.subjectId, subjectId))
+        .run();
+      this.db
+        .delete(divisionsTable)
+        .where(eq(divisionsTable.subjectId, subjectId))
+        .run();
+      this.db
+        .delete(unassignedPagesTable)
+        .where(eq(unassignedPagesTable.subjectId, subjectId))
+        .run();
+      this.db
+        .delete(chatMessagesTable)
+        .where(eq(chatMessagesTable.subjectId, subjectId))
+        .run();
+      const practiceSetIds = this.db
+        .select({ id: practiceSetsTable.id })
+        .from(practiceSetsTable)
+        .where(eq(practiceSetsTable.subjectId, subjectId))
+        .all()
+        .map((row) => row.id);
+      for (const practiceSetId of practiceSetIds) {
+        this.db
+          .delete(practiceQuestionsTable)
+          .where(eq(practiceQuestionsTable.practiceSetId, practiceSetId))
+          .run();
+      }
+      this.db
+        .delete(practiceSetsTable)
+        .where(eq(practiceSetsTable.subjectId, subjectId))
+        .run();
+      this.db
+        .delete(jobsTable)
+        .where(eq(jobsTable.subjectId, subjectId))
+        .run();
+      this.db
+        .delete(sourceDocumentsTable)
+        .where(eq(sourceDocumentsTable.subjectId, subjectId))
+        .run();
+      this.db
+        .delete(subjectsTable)
+        .where(eq(subjectsTable.id, subjectId))
+        .run();
+    });
+
+    transaction();
+    return subject;
+  }
+
   touchSubject(subjectId: string): void {
     this.db
       .update(subjectsTable)
@@ -496,6 +695,177 @@ export class DatabaseService {
       .where(eq(documentPagesTable.documentId, documentId))
       .orderBy(documentPagesTable.pageNumber)
       .all();
+  }
+
+  listChatMessagesBySubject(subjectId: string, divisionId?: string): ChatMessageRow[] {
+    const base = this.db
+      .select()
+      .from(chatMessagesTable)
+      .where(eq(chatMessagesTable.subjectId, subjectId))
+      .orderBy(chatMessagesTable.createdAt)
+      .all();
+
+    if (!divisionId) {
+      return base;
+    }
+
+    return base.filter((message) => message.divisionId === divisionId);
+  }
+
+  insertChatMessages(messages: InsertChatMessageInput[]): ChatMessageRow[] {
+    const now = createNow();
+    const rows = messages.map((message) => ({
+      ...message,
+      createdAt: now,
+    }));
+
+    if (rows.length === 0) {
+      return [];
+    }
+
+    this.db.insert(chatMessagesTable).values(rows).run();
+    this.touchSubject(rows[0].subjectId);
+    return rows;
+  }
+
+  listPracticeSetsBySubject(subjectId: string, divisionId?: string): PracticeSetRecord[] {
+    const practiceSets = this.db
+      .select()
+      .from(practiceSetsTable)
+      .where(eq(practiceSetsTable.subjectId, subjectId))
+      .orderBy(desc(practiceSetsTable.createdAt))
+      .all();
+
+    const filteredSets = divisionId
+      ? practiceSets.filter((practiceSet) => practiceSet.divisionId === divisionId)
+      : practiceSets;
+
+    return filteredSets.map((practiceSet) => ({
+      practiceSet,
+      questions: this.db
+        .select()
+        .from(practiceQuestionsTable)
+        .where(eq(practiceQuestionsTable.practiceSetId, practiceSet.id))
+        .orderBy(practiceQuestionsTable.questionIndex)
+        .all(),
+    }));
+  }
+
+  insertPracticeSet(input: InsertPracticeSetInput): PracticeSetRecord {
+    const now = createNow();
+    const practiceSetRow: PracticeSetRow = {
+      ...input.practiceSet,
+      createdAt: now,
+      updatedAt: now,
+    };
+    const questionRows: PracticeQuestionRow[] = input.questions.map((question) => ({
+      ...question,
+      practiceSetId: practiceSetRow.id,
+      createdAt: now,
+      updatedAt: now,
+    }));
+
+    const transaction = this.sqlite.transaction(() => {
+      this.db.insert(practiceSetsTable).values(practiceSetRow).run();
+
+      if (questionRows.length > 0) {
+        this.db.insert(practiceQuestionsTable).values(questionRows).run();
+      }
+
+      this.touchSubject(practiceSetRow.subjectId);
+    });
+
+    transaction();
+
+    return {
+      practiceSet: practiceSetRow,
+      questions: questionRows,
+    };
+  }
+
+  revealPracticeQuestion(questionId: string): PracticeQuestionRow | null {
+    const existing =
+      this.db
+        .select()
+        .from(practiceQuestionsTable)
+        .where(eq(practiceQuestionsTable.id, questionId))
+        .get() ?? null;
+
+    if (!existing) {
+      return null;
+    }
+
+    if (existing.revealed) {
+      return existing;
+    }
+
+    const updatedAt = createNow();
+    this.db
+      .update(practiceQuestionsTable)
+      .set({
+        revealed: true,
+        updatedAt,
+      })
+      .where(eq(practiceQuestionsTable.id, questionId))
+      .run();
+
+    const practiceSet =
+      this.db
+        .select()
+        .from(practiceSetsTable)
+        .where(eq(practiceSetsTable.id, existing.practiceSetId))
+        .get() ?? null;
+
+    if (practiceSet) {
+      this.db
+        .update(practiceSetsTable)
+        .set({ updatedAt })
+        .where(eq(practiceSetsTable.id, practiceSet.id))
+        .run();
+      this.touchSubject(practiceSet.subjectId);
+    }
+
+    return {
+      ...existing,
+      revealed: true,
+      updatedAt,
+    };
+  }
+
+  getPracticeSetByQuestionId(questionId: string): PracticeSetRecord | null {
+    const question =
+      this.db
+        .select()
+        .from(practiceQuestionsTable)
+        .where(eq(practiceQuestionsTable.id, questionId))
+        .get() ?? null;
+
+    if (!question) {
+      return null;
+    }
+
+    const practiceSet =
+      this.db
+        .select()
+        .from(practiceSetsTable)
+        .where(eq(practiceSetsTable.id, question.practiceSetId))
+        .get() ?? null;
+
+    if (!practiceSet) {
+      return null;
+    }
+
+    const questions = this.db
+      .select()
+      .from(practiceQuestionsTable)
+      .where(eq(practiceQuestionsTable.practiceSetId, practiceSet.id))
+      .orderBy(practiceQuestionsTable.questionIndex)
+      .all();
+
+    return {
+      practiceSet,
+      questions,
+    };
   }
 
   listJobsBySubject(subjectId: string, type?: string): JobRow[] {

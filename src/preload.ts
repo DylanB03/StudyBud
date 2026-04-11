@@ -1,10 +1,13 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
 import {
+  type ChatAskInput,
   type AnalyzeSubjectInput,
+  type GeneratePracticeInput,
   IPC_CHANNELS,
   type CreateSubjectInput,
   type ImportDocumentsInput,
+  type RevealPracticeAnswerInput,
   type SaveSettingsInput,
   type StudyBudApi,
 } from './shared/ipc';
@@ -19,12 +22,20 @@ const api: StudyBudApi = {
   listSubjects: () => ipcRenderer.invoke(IPC_CHANNELS.SUBJECTS_LIST),
   createSubject: (input: CreateSubjectInput) =>
     ipcRenderer.invoke(IPC_CHANNELS.SUBJECTS_CREATE, input),
+  deleteSubject: (subjectId: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.SUBJECTS_DELETE, subjectId),
   getSubjectWorkspace: (subjectId: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.SUBJECTS_WORKSPACE, subjectId),
   importDocuments: (input: ImportDocumentsInput) =>
     ipcRenderer.invoke(IPC_CHANNELS.SUBJECTS_IMPORT, input),
   analyzeSubject: (input: AnalyzeSubjectInput) =>
     ipcRenderer.invoke(IPC_CHANNELS.SUBJECTS_ANALYZE, input),
+  askChat: (input: ChatAskInput) =>
+    ipcRenderer.invoke(IPC_CHANNELS.CHAT_ASK, input),
+  generatePractice: (input: GeneratePracticeInput) =>
+    ipcRenderer.invoke(IPC_CHANNELS.PRACTICE_GENERATE, input),
+  revealPracticeAnswer: (input: RevealPracticeAnswerInput) =>
+    ipcRenderer.invoke(IPC_CHANNELS.PRACTICE_REVEAL, input),
   deleteDocument: (documentId: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.DOCUMENTS_DELETE, documentId),
   getDocumentDetail: (documentId: string) =>

@@ -6,9 +6,13 @@ export const IPC_CHANNELS = {
   SETTINGS_RESET_DATA_PATH: 'settings:reset-data-path',
   SUBJECTS_LIST: 'subjects:list',
   SUBJECTS_CREATE: 'subjects:create',
+  SUBJECTS_DELETE: 'subjects:delete',
   SUBJECTS_WORKSPACE: 'subjects:workspace',
   SUBJECTS_IMPORT: 'subjects:import',
   SUBJECTS_ANALYZE: 'subjects:analyze',
+  CHAT_ASK: 'chat:ask',
+  PRACTICE_GENERATE: 'practice:generate',
+  PRACTICE_REVEAL: 'practice:reveal',
   DOCUMENTS_DELETE: 'documents:delete',
   DOCUMENTS_DETAIL: 'documents:detail',
   DOCUMENTS_DATA: 'documents:data',
@@ -112,6 +116,7 @@ export type DocumentPageSummary = {
   pageNumber: number;
   textLength: number;
   previewText: string;
+  textContent: string;
 };
 
 export type SourceDocumentDetail = SourceDocumentSummary & {
@@ -124,6 +129,8 @@ export type SubjectWorkspace = {
   jobs: ImportJobSummary[];
   analysisJobs: SubjectAnalysisJobSummary[];
   analysis: SubjectAnalysisSummary | null;
+  chatMessages: DivisionChatMessage[];
+  practiceSets: PracticeSet[];
 };
 
 export type ImportDocumentsInput = {
@@ -138,18 +145,29 @@ export type ImportDocumentsResult = {
   failures: ImportFailure[];
 };
 
+export type CitationRef = {
+  pageId: string;
+  documentId: string;
+  documentName: string;
+  documentKind: DocumentKind;
+  pageNumber: number;
+  excerptText: string;
+  highlightText: string | null;
+  thumbnailAssetPath?: string | null;
+  textBounds?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null;
+};
+
 export type SubjectAnalysisDivision = {
   id: string;
   title: string;
   summary: string;
   keyConcepts: string[];
-  sourcePages: Array<{
-    pageId: string;
-    documentId: string;
-    documentName: string;
-    documentKind: DocumentKind;
-    pageNumber: number;
-  }>;
+  sourcePages: CitationRef[];
   problemTypes: Array<{
     id: string;
     title: string;
@@ -179,6 +197,101 @@ export type AnalyzeSubjectResult = {
   analysis: SubjectAnalysisSummary;
 };
 
+export type SelectionContext = {
+  kind:
+    | 'division-summary'
+    | 'page-text'
+    | 'practice-question'
+    | 'practice-answer';
+  subjectId: string;
+  divisionId: string;
+  selectedText: string;
+  surroundingText: string;
+  sourcePageIds: string[];
+  pageId?: string | null;
+  documentId?: string | null;
+  documentName?: string | null;
+  documentKind?: DocumentKind | null;
+  pageNumber?: number | null;
+};
+
+export type GroundedAnswer = {
+  answerMarkdown: string;
+  citations: CitationRef[];
+  followups: string[];
+};
+
+export type DivisionChatMessage = {
+  id: string;
+  subjectId: string;
+  divisionId: string;
+  role: 'user' | 'assistant';
+  content: string;
+  citations: CitationRef[];
+  followups: string[];
+  selectionContext: SelectionContext | null;
+  createdAt: string;
+};
+
+export type ChatAskInput = {
+  subjectId: string;
+  divisionId: string;
+  prompt: string;
+  selectionContext?: SelectionContext | null;
+};
+
+export type ChatAskResult = {
+  userMessage: DivisionChatMessage;
+  assistantMessage: DivisionChatMessage;
+  answer: GroundedAnswer;
+};
+
+export type PracticeDifficulty = 'easy' | 'medium' | 'hard';
+
+export type PracticeQuestion = {
+  id: string;
+  questionIndex: number;
+  prompt: string;
+  answer: string;
+  revealed: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PracticeSet = {
+  id: string;
+  subjectId: string;
+  divisionId: string;
+  problemTypeId: string;
+  problemTypeTitle: string;
+  difficulty: PracticeDifficulty;
+  questionCount: number;
+  createdAt: string;
+  updatedAt: string;
+  questions: PracticeQuestion[];
+};
+
+export type GeneratePracticeInput = {
+  subjectId: string;
+  divisionId: string;
+  problemTypeId: string;
+  difficulty: PracticeDifficulty;
+  count: number;
+};
+
+export type GeneratePracticeResult = {
+  practiceSet: PracticeSet;
+};
+
+export type RevealPracticeAnswerInput = {
+  questionId: string;
+};
+
+export type RevealPracticeAnswerResult = {
+  practiceSetId: string;
+  question: PracticeQuestion;
+};
+
 export interface StudyBudApi {
   getAppInfo: () => Promise<AppInfo>;
   getSettings: () => Promise<SettingsState>;
@@ -187,9 +300,15 @@ export interface StudyBudApi {
   resetDataPath: () => Promise<SettingsState>;
   listSubjects: () => Promise<SubjectSummary[]>;
   createSubject: (input: CreateSubjectInput) => Promise<SubjectSummary>;
+  deleteSubject: (subjectId: string) => Promise<void>;
   getSubjectWorkspace: (subjectId: string) => Promise<SubjectWorkspace>;
   importDocuments: (input: ImportDocumentsInput) => Promise<ImportDocumentsResult>;
   analyzeSubject: (input: AnalyzeSubjectInput) => Promise<AnalyzeSubjectResult>;
+  askChat: (input: ChatAskInput) => Promise<ChatAskResult>;
+  generatePractice: (input: GeneratePracticeInput) => Promise<GeneratePracticeResult>;
+  revealPracticeAnswer: (
+    input: RevealPracticeAnswerInput,
+  ) => Promise<RevealPracticeAnswerResult>;
   deleteDocument: (documentId: string) => Promise<void>;
   getDocumentDetail: (documentId: string) => Promise<SourceDocumentDetail>;
   readDocumentData: (documentId: string) => Promise<Uint8Array>;

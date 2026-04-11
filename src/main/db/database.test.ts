@@ -163,6 +163,88 @@ describe('DatabaseService', () => {
     expect(database.getPagesByDocument('doc-delete')).toEqual([]);
   });
 
+  it('deletes a subject together with its documents, analysis data, and jobs', () => {
+    const { database } = createContext();
+
+    database.createSubjectWithId('Mechanics', 'subject-remove');
+    database.createImportJob({
+      id: 'job-remove-import',
+      subjectId: 'subject-remove',
+      message: 'Importing subject files...',
+      payload: JSON.stringify({ selectedFiles: ['mechanics.pdf'] }),
+    });
+    database.createSubjectIngestionJob({
+      id: 'job-remove-analysis',
+      subjectId: 'subject-remove',
+      message: 'Analyzing subject...',
+      payload: JSON.stringify({ provider: 'OpenAI', model: 'gpt-5.4-mini' }),
+    });
+
+    database.insertImportedDocument({
+      document: {
+        id: 'doc-remove',
+        subjectId: 'subject-remove',
+        kind: 'lecture',
+        originalFileName: 'mechanics.pdf',
+        storedFileName: 'doc-remove-mechanics.pdf',
+        relativePath: 'subjects/subject-remove/documents/doc-remove-mechanics.pdf',
+        mimeType: 'application/pdf',
+        pageCount: 1,
+        importStatus: 'ready',
+        errorMessage: null,
+      },
+      pages: [
+        {
+          id: 'page-remove',
+          pageNumber: 1,
+          textContent: 'Newtonian mechanics overview',
+        },
+      ],
+      chunks: [
+        {
+          id: 'chunk-remove',
+          pageId: 'page-remove',
+          chunkIndex: 0,
+          textContent: 'Newtonian mechanics overview',
+        },
+      ],
+    });
+
+    database.replaceSubjectAnalysis('subject-remove', {
+      divisions: [
+        {
+          division: {
+            id: 'division-remove',
+            title: 'Newtonian Mechanics',
+            summary: 'Core laws of motion.',
+            keyConceptsJson: JSON.stringify(['force', 'mass', 'acceleration']),
+          },
+          sourcePageIds: ['page-remove'],
+          problemTypes: [
+            {
+              id: 'problem-remove',
+              divisionId: 'division-remove',
+              title: 'Apply F=ma',
+              description: 'Solve direct force and acceleration problems.',
+            },
+          ],
+        },
+      ],
+      unassignedPages: [],
+    });
+
+    const deletedSubject = database.deleteSubject('subject-remove');
+
+    expect(deletedSubject?.id).toBe('subject-remove');
+    expect(database.getSubjectById('subject-remove')).toBeNull();
+    expect(database.listDocumentsBySubject('subject-remove')).toEqual([]);
+    expect(database.listJobsBySubject('subject-remove')).toEqual([]);
+    expect(database.getSubjectAnalysis('subject-remove')).toMatchObject({
+      divisions: [],
+      unassignedPages: [],
+    });
+  });
+
   it('reconciles interrupted import jobs', () => {
     const { database } = createContext();
 
@@ -268,5 +350,91 @@ describe('DatabaseService', () => {
     expect(analysis.divisions[0]?.problemTypes[0]?.title).toBe('Evaluate limits');
     expect(analysis.unassignedPages).toHaveLength(1);
     expect(analysis.unassignedPages[0]?.page.pageId).toBe('page-analysis-2');
+  });
+
+  it('stores and returns division chat history in creation order', () => {
+    const { database } = createContext();
+
+    database.createSubjectWithId('Signals', 'subject-chat');
+    const messages = database.insertChatMessages([
+      {
+        id: 'chat-user',
+        subjectId: 'subject-chat',
+        divisionId: 'division-chat',
+        role: 'user',
+        content: 'What does convolution mean here?',
+        citationsJson: JSON.stringify([]),
+        followupsJson: JSON.stringify([]),
+        selectionContextJson: null,
+      },
+      {
+        id: 'chat-assistant',
+        subjectId: 'subject-chat',
+        divisionId: 'division-chat',
+        role: 'assistant',
+        content: 'Convolution combines an input with a system response.',
+        citationsJson: JSON.stringify([]),
+        followupsJson: JSON.stringify(['Show me an example.']),
+        selectionContextJson: null,
+      },
+    ]);
+
+    expect(messages).toHaveLength(2);
+
+    const persisted = database.listChatMessagesBySubject(
+      'subject-chat',
+      'division-chat',
+    );
+    expect(persisted).toHaveLength(2);
+    expect(persisted[0]?.role).toBe('user');
+    expect(persisted[1]?.role).toBe('assistant');
+    expect(persisted[1]?.content).toContain('Convolution');
+  });
+
+  it('persists practice sets and reveals answers', () => {
+    const { database } = createContext();
+
+    database.createSubjectWithId('Statics', 'subject-practice');
+
+    const inserted = database.insertPracticeSet({
+      practiceSet: {
+        id: 'practice-set-1',
+        subjectId: 'subject-practice',
+        divisionId: 'division-statics',
+        problemTypeId: 'problem-free-body',
+        problemTypeTitle: 'Free-body diagram setup',
+        difficulty: 'medium',
+        questionCount: 2,
+      },
+      questions: [
+        {
+          id: 'practice-question-1',
+          questionIndex: 1,
+          prompt: 'Draw a free-body diagram for a block on an incline.',
+          answer: 'Include gravity, normal force, and friction if applicable.',
+          revealed: false,
+        },
+        {
+          id: 'practice-question-2',
+          questionIndex: 2,
+          prompt: 'Resolve the weight vector into incline-aligned components.',
+          answer: 'Use mg sin(theta) parallel and mg cos(theta) perpendicular.',
+          revealed: false,
+        },
+      ],
+    });
+
+    expect(inserted.questions).toHaveLength(2);
+
+    const listed = database.listPracticeSetsBySubject('subject-practice');
+    expect(listed).toHaveLength(1);
+    expect(listed[0]?.questions[0]?.revealed).toBe(false);
+
+    const revealed = database.revealPracticeQuestion('practice-question-1');
+    expect(revealed?.revealed).toBe(true);
+
+    const refreshed = database.getPracticeSetByQuestionId('practice-question-1');
+    expect(refreshed?.questions[0]?.revealed).toBe(true);
+    expect(refreshed?.practiceSet.problemTypeTitle).toBe('Free-body diagram setup');
   });
 });

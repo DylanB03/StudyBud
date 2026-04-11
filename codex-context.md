@@ -24,9 +24,11 @@ It should stay grounded in the repo, not in aspirational product goals.
 - Current implemented phases:
   - Phase 0: implemented
   - Phase 1: implemented
-  - Phase 2: partially implemented
+  - Phase 2: implemented with ongoing stability work
+  - Phase 3: implemented
+  - Phase 4: implemented
 - Not yet implemented:
-  - Phase 3 onward in the roadmap (`division workspace with citation previews`, `chat`, `contextual clarification`, `practice generation`, `research/browser`, `video suggestions`)
+  - Phase 5 onward in the roadmap (`practice generation`, `research/browser`, `video suggestions`)
 
 ## What The App Can Do Now
 - Electron desktop app with `main`, `preload`, and `renderer` separation
@@ -37,19 +39,29 @@ It should stay grounded in the repo, not in aspirational product goals.
 - PDF text extraction and chunking
 - PDF viewing and extracted page-text inspection
 - failed/imported document deletion
+- subject deletion from the library with confirmation
 - subject analysis into:
   - divisions
   - key concepts
   - problem types
   - unassigned pages
+- division-first workspace
+- citation preview cards tied to source pages
+- click-through from a division citation into the PDF viewer
+- focused citation evidence panel with excerpt-aware source context
+- citation-aware page targeting that preserves the intended page when switching documents
+- citation-highlighted extracted page text and PDF focus banner
+- division-scoped grounded chat
+- selection-based clarification with contextual popup question entry
+- right-side answer/chat rail inside the workspace
+- persisted chat history per division
 - provider-based AI configuration:
   - OpenAI
   - local Ollama
 
 ## What Is Partially Implemented
-- Phase 2 analysis works as a backend-and-workspace feature, but it is not yet the final product experience described in the roadmap
-- The current analysis UI is a development-stage analysis pane, not the final division-first study interface
-- The AI layer is provider-aware, but only the implemented analysis flow uses it so far
+- The AI layer is provider-aware for the implemented analysis and grounded chat flows, but not yet for later planned features like practice generation
+- The overall student-facing polish is still below the eventual product vision, even though the roadmap-defined Phase 4 scope is now in place
 
 ## General Structure
 - Main process entry: [src/main.ts](/home/dylan/Gitrepos/allrepos/StudyBud/src/main.ts)
@@ -68,9 +80,15 @@ It should stay grounded in the repo, not in aspirational product goals.
   - OpenAI client: [src/main/ai/openai.ts](/home/dylan/Gitrepos/allrepos/StudyBud/src/main/ai/openai.ts)
   - Ollama client: [src/main/ai/ollama.ts](/home/dylan/Gitrepos/allrepos/StudyBud/src/main/ai/ollama.ts)
 - Phase 2 analysis: [src/main/analysis/subject-analysis.ts](/home/dylan/Gitrepos/allrepos/StudyBud/src/main/analysis/subject-analysis.ts)
+- Citation excerpt helper: [src/main/analysis/citation-excerpts.ts](/home/dylan/Gitrepos/allrepos/StudyBud/src/main/analysis/citation-excerpts.ts)
+- Grounded chat service: [src/main/chat/grounded-chat.ts](/home/dylan/Gitrepos/allrepos/StudyBud/src/main/chat/grounded-chat.ts)
 - Renderer root: [src/renderer.tsx](/home/dylan/Gitrepos/allrepos/StudyBud/src/renderer.tsx)
 - Main UI: [src/ui/App.tsx](/home/dylan/Gitrepos/allrepos/StudyBud/src/ui/App.tsx)
 - PDF viewer UI: [src/ui/PdfViewer.tsx](/home/dylan/Gitrepos/allrepos/StudyBud/src/ui/PdfViewer.tsx)
+- Citation preview UI: [src/ui/CitationPreviewCard.tsx](/home/dylan/Gitrepos/allrepos/StudyBud/src/ui/CitationPreviewCard.tsx)
+- Division chat UI: [src/ui/DivisionChatPanel.tsx](/home/dylan/Gitrepos/allrepos/StudyBud/src/ui/DivisionChatPanel.tsx)
+- Selection popup UI: [src/ui/SelectionQuestionPopup.tsx](/home/dylan/Gitrepos/allrepos/StudyBud/src/ui/SelectionQuestionPopup.tsx)
+- Selection chip UI: [src/ui/SelectionAskChip.tsx](/home/dylan/Gitrepos/allrepos/StudyBud/src/ui/SelectionAskChip.tsx)
 - Styling: [src/index.css](/home/dylan/Gitrepos/allrepos/StudyBud/src/index.css)
 - Build config:
   - [forge.config.ts](/home/dylan/Gitrepos/allrepos/StudyBud/forge.config.ts)
@@ -105,6 +123,26 @@ It should stay grounded in the repo, not in aspirational product goals.
 - source-page linking from analysis results back into the PDF viewer
 - OpenAI-backed analysis path
 - Ollama-backed analysis path
+
+### Phase 3
+- division navigator in the workspace
+- selected-division detail view
+- citation preview cards for referenced source pages
+- click-to-open citation navigation into the existing PDF viewer
+- renderer-side PDF byte reuse/caching for cited documents
+- excerpt-aware citation evidence generation from stored page text
+- active citation focus state in the workspace
+- citation-linked page-text highlighting and viewer focus banner
+
+### Phase 4
+- division-scoped chat history and grounded assistant answers
+- `chat.ask` IPC flow backed by persistent SQLite chat messages
+- selected-text clarification from analysis-derived text and extracted page text
+- right-side chat/answer rail in the workspace
+- contextual selection UI:
+  - lightweight `Ask about this` chip on text selection
+  - popup question composer near the selection
+  - answers still land in the persistent chat rail
 
 ## Major Changes Added Outside The Original Roadmap / Plan
 These are important because they are real codebase commitments, even though they were not originally the “next planned feature.”
@@ -158,6 +196,31 @@ Implemented:
 Why it exists:
 - without this, analyze felt like a hang with no observability
 
+### Subject Deletion From Library
+Not explicitly called out in the roadmap, but consistent with the product direction and needed for real subject management.
+
+Implemented:
+- delete action from the library
+- confirmation prompt before deletion
+- DB cleanup for subject-owned records
+- filesystem cleanup for subject storage directory
+
+Why it exists:
+- user-requested
+- necessary once subjects become persistent saved classes
+
+### Workspace-Focused Layout Mode
+Not explicitly called out in the roadmap, but strongly aligned with the product’s study-first usage.
+
+Implemented:
+- global left app sidebar disappears while inside a subject workspace
+- workspace becomes a focused three-column study layout
+- right-side chat/answer rail replaces the older bottom-stacked answer area
+
+Why it exists:
+- user-requested
+- better matches the intended “inside a subject” study mode
+
 ### WSL-Aware Ollama Fallback
 Not in the roadmap.
 
@@ -177,6 +240,7 @@ Why it exists:
 - added single-instance focusing
 - registered IPC handlers immediately and made handlers wait for initialization
 - improved startup sequencing to avoid `No handler registered` races
+- hardened IPC registration to clear and re-register handlers on startup/reload instead of assuming a clean dev main-process lifecycle
 
 ### Native Module / Build Stability
 - fixed `better-sqlite3` bundling by keeping native loading on the runtime side
@@ -201,12 +265,24 @@ Why it exists:
 - fixed overlap between document info, document navigation, PDF viewer, and extracted-text panel
 - moved version under the main `StudyBud` title
 - removed top-level data-path display from the main shell after it proved unnecessary
+- added subject delete controls in the library with confirmation
+- moved the workspace from an analysis-list layout toward a division-first layout
+- hid the global app sidebar while inside a subject workspace
+- moved chat/answers into a dedicated right-side workspace rail
+- broadened selection-based clarification across analysis-derived text surfaces instead of limiting it to the main summary
+- changed selection clarification from a stagnant bottom state into a contextual popup flow
 
 ### AI / Analysis-Specific Fixes
 - fixed provider gating so `Analyze Subject` works in Ollama mode without requiring an OpenAI key
 - fixed OpenAI structured-output schema mismatch for `unassignedRefs.reason`
 - analysis jobs now persist provider/model metadata
 - improved Ollama failures from generic hangs to specific timeout/reachability errors
+- fixed detached `ArrayBuffer` errors during homework analysis / citation preview rendering by cloning PDF bytes before passing them to PDF.js consumers
+- citation previews previously falling back to `Preview unavailable` are now able to render from the same cached documents as the viewer
+- citation summaries now derive stronger page-level excerpts and highlight text from stored page content instead of using only blunt page truncation
+- fixed a citation-navigation state bug where switching documents from a citation could snap the viewer back to page 1 during document load
+- added grounded division chat with citation-backed answers and persisted message history
+- added selection-context clarification on analysis text and extracted page text
 
 ## Current Data Model Shape
 Persisted entities now effectively include:
@@ -220,8 +296,9 @@ Persisted entities now effectively include:
 - `division_source_pages`
 - `problem_types`
 - `unassigned_pages`
+- `chat_messages`
 
-This is enough for the current Phase 2 implementation, but not yet for chat/practice/citation-preview flows.
+This is enough for the current Phase 4 implementation, but not yet for practice/research flows.
 
 ## Current IPC Surface
 Implemented channels in [src/shared/ipc.ts](/home/dylan/Gitrepos/allrepos/StudyBud/src/shared/ipc.ts):
@@ -232,16 +309,23 @@ Implemented channels in [src/shared/ipc.ts](/home/dylan/Gitrepos/allrepos/StudyB
 - `settings:reset-data-path`
 - `subjects:list`
 - `subjects:create`
+- `subjects:delete`
 - `subjects:workspace`
 - `subjects:import`
 - `subjects:analyze`
+- `chat:ask`
 - `documents:delete`
 - `documents:detail`
 - `documents:data`
 
 ## Current UX Notes
-- The app is now beyond a pure import/viewer scaffold, but it is still not the final student-facing study experience from the planning docs
-- The `Subject Analysis` pane is the current Phase 2 working UI
+- The app is now beyond a pure import/viewer scaffold, and the workspace matches the intended Phase 4 study structure
+- The subject workspace is now a focused mode:
+  - left workspace column for divisions/documents
+  - center study content and PDF work area
+  - right-side chat/answer rail
+- Selection-based clarification now starts from a lightweight inline chip and popup instead of a stagnant bottom composer state
+- Citation preview cards, focused evidence, and grounded chat answers are present, but the overall experience is still an engineering MVP rather than a polished study product
 - The app currently feels like an internal MVP / engineering build rather than a polished learning product
 - The settings UI is now more complex because it includes:
   - provider choice
@@ -252,13 +336,11 @@ Implemented channels in [src/shared/ipc.ts](/home/dylan/Gitrepos/allrepos/StudyB
 ## Known Limitations
 - No OCR support
 - No embeddings/retrieval yet
-- No division sidebar workspace from Phase 3 yet
-- No citation thumbnail cards yet
-- No chat yet
 - No practice generation yet
 - No web-search/browser/video workflow yet
 - Current Ollama analysis path still uses a fairly heavy single-pass structured extraction prompt
   - this is likely too demanding for weaker local models on large subjects
+- Grounded chat currently uses a relatively simple retrieval strategy over division source pages/chunks rather than a stronger embedding-backed retriever
 - Streaming is not implemented yet
   - progress visibility exists
   - token-by-token/partial-response UX does not
@@ -269,9 +351,11 @@ Implemented channels in [src/shared/ipc.ts](/home/dylan/Gitrepos/allrepos/StudyB
 Recent verification commonly succeeded with:
 - `npm run lint`
 - `npm run typecheck`
+- `npm test`
 
 Historically there are automated tests for:
 - DB bootstrap and document deletion
+- subject deletion
 - import worker request handling
 - import worker path resolution
 - multi-file PDF import
@@ -280,33 +364,50 @@ Historically there are automated tests for:
 - PDF.js worker configuration
 - CSP handling
 - subject analysis persistence
+- citation excerpt selection
+- grounded chat persistence and answer flow
+
+Latest full verification completed with:
+- `npm run lint`
+- `npm run typecheck`
+- `npm test` with 24 passing tests
+- `npm run package`
+
+Latest incremental UX verification also completed with:
+- `npm run lint`
+- `npm run typecheck`
 
 Important caveat:
 - `npm test` has been environment-sensitive because `better-sqlite3` rebuild state can diverge between Node and Electron contexts on different machines
 - treat failing tests on a fresh machine as potentially native-build related until proven otherwise
 
 ## Recommended Next Steps
-1. Stabilize Phase 2 for local-model use by designing an Ollama-friendly analysis path.
+1. Start Phase 5 with practice generation and saved practice state.
+   - practice set schema
+   - persistence model
+   - per-division generation UI
+2. Strengthen the current grounded-chat retrieval path.
+   - better relevance ranking
+   - stronger citation selection
+   - eventual embedding-backed retrieval
+3. Stabilize local-model use by designing an Ollama-friendly analysis path.
    - smaller prompts
    - fewer pages per call
    - likely multi-pass analysis instead of one heavy structured pass
-2. Add an in-app `Test Ollama` action in Settings.
+4. Add an in-app `Test Ollama` action in Settings.
    - quick health check
    - tiny chat test
    - clear success/failure messaging
-3. Decide whether to continue treating Phase 2 as “partial” or to formally complete it with:
-   - better retries
-   - better failure states
-   - prompt-size controls
-4. After that, move into Phase 3 rather than continuing to pile product logic into the current analysis pane.
-5. Keep Phase 3 scoped to:
-   - division navigation
-   - citation previews
-   - stronger study-first layout
+5. Continue improving workspace polish:
+   - resizable/collapsible workspace columns
+   - more selectable citation surfaces
+   - better manual GUI smoke coverage
+6. Continue to treat native rebuild issues on fresh environments as a standing maintenance concern.
 
 ## Practical Dev Notes
 - Run the desktop app with `npm run dev`, not by opening the Vite page directly in a browser
 - Fully restart Electron after main-process, preload, worker, or AI client changes
+- If a new IPC channel appears to exist in code but not at runtime, suspect a stale Electron main process first and fully restart `npm run dev`
 - Native rebuild direction still matters:
   - Electron runtime: `npm run rebuild:native:electron`
   - Vitest runtime: `npm run rebuild:native:node`
@@ -326,6 +427,8 @@ The most accurate description now is:
 - solid Phase 0
 - solid Phase 1
 - real but still maturing Phase 2
+- solid Phase 3
+- solid Phase 4
 - multiple user-driven stabilizations and environment-driven fixes layered on top
 
-Future work should treat the current provider abstraction, data-path configuration, and analysis diagnostics as established parts of the app, even though they were not all part of the original MVP assumptions.
+Future work should treat the current provider abstraction, data-path configuration, analysis diagnostics, division-first workspace, citation-focus flow, grounded chat flow, selection popup UX, and subject deletion flow as established parts of the app, even though they were not all part of the original MVP assumptions.

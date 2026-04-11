@@ -79,6 +79,15 @@ select {
   padding: 10px 12px;
 }
 
+textarea {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  color: var(--text-main);
+  background: rgba(8, 14, 31, 0.9);
+  padding: 12px;
+  resize: vertical;
+}
+
 input:focus {
   outline: 2px solid rgba(117, 215, 249, 0.35);
   border-color: var(--accent);
@@ -89,10 +98,19 @@ select:focus {
   border-color: var(--accent);
 }
 
+textarea:focus {
+  outline: 2px solid rgba(117, 215, 249, 0.35);
+  border-color: var(--accent);
+}
+
 .app-shell {
   display: grid;
   grid-template-columns: 260px minmax(0, 1fr);
   height: 100%;
+}
+
+.app-shell.workspace-mode {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .sidebar {
@@ -338,6 +356,13 @@ code {
   overflow: hidden;
 }
 
+.subject-card-shell {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(8, 14, 31, 0.45);
+  overflow: hidden;
+}
+
 .document-card-shell.active {
   border-color: var(--accent);
   box-shadow: 0 0 0 1px rgba(117, 215, 249, 0.25);
@@ -372,7 +397,24 @@ code {
   padding: 8px 12px;
 }
 
+.subject-delete-button {
+  width: 100%;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  border-top: 1px solid var(--line);
+  border-left: none;
+  border-right: none;
+  border-bottom: none;
+  background: rgba(127, 29, 29, 0.18);
+  color: var(--danger);
+  padding: 8px 12px;
+}
+
 .document-delete-button:hover {
+  background: rgba(127, 29, 29, 0.3);
+}
+
+.subject-delete-button:hover {
   background: rgba(127, 29, 29, 0.3);
 }
 
@@ -445,17 +487,24 @@ code {
 
 .workspace-grid {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
+  grid-template-columns: 280px minmax(0, 1fr) 380px;
   gap: 18px;
   min-height: 0;
 }
 
 .workspace-sidebar,
-.workspace-main {
+.workspace-main,
+.workspace-chat {
   min-width: 0;
   display: grid;
   gap: 16px;
   align-content: start;
+}
+
+.workspace-chat {
+  position: sticky;
+  top: 0;
+  align-self: start;
 }
 
 .analysis-panel {
@@ -507,6 +556,11 @@ code {
   gap: 12px;
 }
 
+.division-workspace {
+  display: grid;
+  gap: 14px;
+}
+
 .analysis-division-card,
 .analysis-problem-card {
   border: 1px solid var(--line);
@@ -518,6 +572,11 @@ code {
   display: grid;
   gap: 12px;
   padding: 14px;
+}
+
+.division-focus-card {
+  background:
+    linear-gradient(180deg, rgba(16, 27, 50, 0.78), rgba(9, 17, 33, 0.68));
 }
 
 .analysis-division-header {
@@ -573,6 +632,7 @@ code {
   color: var(--text-main);
   padding: 6px 10px;
   font-size: 0.84rem;
+  user-select: text;
 }
 
 .analysis-problem-card {
@@ -580,6 +640,84 @@ code {
   gap: 6px;
   min-width: min(280px, 100%);
   padding: 10px 12px;
+  user-select: text;
+}
+
+.practice-panel {
+  gap: 16px;
+}
+
+.practice-generator-card,
+.practice-set-card,
+.practice-question-card,
+.practice-answer-panel {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(9, 17, 33, 0.68);
+}
+
+.practice-generator-card,
+.practice-set-card,
+.practice-question-card,
+.practice-answer-panel {
+  padding: 14px;
+}
+
+.practice-generator-card,
+.practice-set-card,
+.practice-question-card {
+  display: grid;
+  gap: 12px;
+}
+
+.practice-generator-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.practice-generator-grid label {
+  display: grid;
+  gap: 8px;
+}
+
+.practice-generator-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.practice-set-list,
+.practice-question-list {
+  display: grid;
+  gap: 14px;
+}
+
+.practice-question-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.practice-question-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.practice-question-copy,
+.practice-answer-copy {
+  margin: 0;
+  line-height: 1.5;
+  color: var(--text-main);
+  user-select: text;
+}
+
+.practice-answer-panel {
+  display: grid;
+  gap: 10px;
+  background: rgba(52, 183, 243, 0.07);
 }
 
 .analysis-source-button {
@@ -608,6 +746,292 @@ code {
   background: rgba(127, 29, 29, 0.16);
   color: var(--text-main);
   line-height: 1.4;
+  user-select: text;
+}
+
+.division-nav-list {
+  display: grid;
+  gap: 10px;
+}
+
+.division-nav-button {
+  display: grid;
+  gap: 10px;
+  border-color: var(--line);
+  background: rgba(8, 14, 31, 0.5);
+  color: var(--text-main);
+  text-align: left;
+  padding: 12px;
+  user-select: text;
+}
+
+.division-nav-button:hover,
+.division-nav-button.active {
+  border-color: var(--accent);
+  background: rgba(52, 183, 243, 0.12);
+}
+
+.division-nav-copy {
+  display: grid;
+  gap: 6px;
+}
+
+.division-nav-copy strong {
+  font-size: 0.98rem;
+}
+
+.division-nav-summary {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.4;
+  font-size: 0.9rem;
+}
+
+.division-nav-count {
+  color: var(--accent);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.citation-section {
+  display: grid;
+  gap: 12px;
+}
+
+.citation-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.citation-card {
+  display: grid;
+  gap: 10px;
+  border-color: var(--line);
+  background: rgba(8, 14, 31, 0.56);
+  color: var(--text-main);
+  text-align: left;
+  padding: 10px;
+  overflow: hidden;
+}
+
+.citation-card:hover,
+.citation-card.active {
+  border-color: var(--accent);
+  background: rgba(52, 183, 243, 0.12);
+}
+
+.citation-card.active {
+  box-shadow: 0 0 0 1px rgba(117, 215, 249, 0.26);
+}
+
+.citation-thumb-shell {
+  display: grid;
+  place-items: center;
+  min-height: 150px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.citation-preview-canvas {
+  width: 100%;
+  height: auto;
+  border-radius: 10px;
+  background: white;
+  transform-origin: center;
+  transition: transform 160ms ease;
+}
+
+.citation-card:hover .citation-preview-canvas {
+  transform: scale(1.03);
+}
+
+.citation-preview-placeholder {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.citation-card-copy {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  user-select: text;
+}
+
+.citation-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  color: var(--text-muted);
+  font-size: 0.84rem;
+  user-select: text;
+}
+
+.citation-doc-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.citation-excerpt {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.citation-focus-panel {
+  border-color: rgba(117, 215, 249, 0.34);
+  background:
+    linear-gradient(180deg, rgba(15, 28, 52, 0.84), rgba(8, 14, 31, 0.68));
+}
+
+.citation-focus-excerpt {
+  margin: 0;
+  color: var(--text-main);
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.chat-message-list {
+  display: grid;
+  gap: 12px;
+  max-height: min(58vh, 720px);
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.chat-message-card {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 14px;
+  background: rgba(8, 14, 31, 0.44);
+}
+
+.chat-role-assistant {
+  background: rgba(14, 24, 46, 0.74);
+}
+
+.chat-role-user {
+  border-color: rgba(117, 215, 249, 0.2);
+}
+
+.chat-role-pending {
+  border-style: dashed;
+  opacity: 0.92;
+}
+
+.chat-message-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.chat-message-copy {
+  white-space: pre-wrap;
+  line-height: 1.55;
+  color: var(--text-main);
+}
+
+.chat-followups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chat-selection-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  border-radius: 999px;
+  border: 1px solid rgba(117, 215, 249, 0.22);
+  background: rgba(52, 183, 243, 0.1);
+  color: var(--accent);
+  padding: 4px 8px;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.chat-composer {
+  display: grid;
+  gap: 10px;
+}
+
+.chat-composer-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.selection-popup {
+  position: absolute;
+  z-index: 40;
+  width: min(360px, calc(100vw - 32px));
+  display: grid;
+  gap: 10px;
+  border: 1px solid rgba(117, 215, 249, 0.28);
+  border-radius: 16px;
+  padding: 14px;
+  background: rgba(6, 12, 25, 0.97);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(10px);
+}
+
+.selection-ask-chip {
+  position: absolute;
+  z-index: 41;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  border: 1px solid rgba(117, 215, 249, 0.28);
+  border-radius: 999px;
+  padding: 8px 10px;
+  background: rgba(6, 12, 25, 0.98);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(10px);
+}
+
+.selection-ask-chip button {
+  padding: 8px 12px;
+  border-radius: 999px;
+}
+
+.selection-ask-chip-dismiss {
+  padding: 8px 10px;
+}
+
+.selection-popup-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.selection-popup-context {
+  margin: 0;
+  color: var(--accent);
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.selection-popup-quote {
+  margin: 0;
+  border-left: 3px solid rgba(117, 215, 249, 0.5);
+  padding-left: 12px;
+  color: var(--text-main);
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.selection-popup-actions {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .sidebar-section {
@@ -693,6 +1117,16 @@ code {
   flex-wrap: wrap;
 }
 
+.pdf-focus-banner {
+  width: 100%;
+  border: 1px solid rgba(117, 215, 249, 0.2);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: rgba(52, 183, 243, 0.09);
+  color: var(--text-main);
+  line-height: 1.45;
+}
+
 .pdf-page-canvas {
   width: 100%;
   max-width: 100%;
@@ -724,8 +1158,21 @@ code {
   overflow-wrap: anywhere;
 }
 
+mark {
+  border-radius: 4px;
+  background: rgba(250, 204, 21, 0.32);
+  color: var(--text-main);
+  padding: 0 2px;
+}
+
 .page-text-list {
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.workspace-chat .analysis-panel {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  max-height: calc(100vh - 140px);
+  overflow: hidden;
 }
 
 .document-card-meta,
@@ -766,6 +1213,10 @@ code {
     grid-template-rows: auto minmax(0, 1fr);
   }
 
+  .app-shell.workspace-mode {
+    grid-template-rows: minmax(0, 1fr);
+  }
+
   .sidebar {
     border-right: none;
     border-bottom: 1px solid var(--line);
@@ -780,7 +1231,8 @@ code {
 
   .workspace-header,
   .subject-open-button,
-  .document-inspector-header {
+  .document-inspector-header,
+  .practice-question-header {
     flex-direction: column;
     align-items: flex-start;
   }
@@ -788,6 +1240,10 @@ code {
   .document-list,
   .thumbnail-strip {
     max-height: none;
+  }
+
+  .workspace-chat {
+    position: static;
   }
 
   .page-text-list {
