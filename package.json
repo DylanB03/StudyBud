@@ -53,9 +53,14 @@
     "better-sqlite3": "^12.8.0",
     "drizzle-orm": "^0.45.2",
     "electron-squirrel-startup": "^1.0.1",
+    "katex": "^0.16.45",
     "pdfjs-dist": "^5.6.205",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
+    "react-markdown": "^10.1.0",
+    "rehype-katex": "^7.0.1",
+    "remark-gfm": "^4.0.1",
+    "remark-math": "^6.0.0",
     "zod": "^4.3.6"
   }
 }

@@ -61,6 +61,7 @@ import {
   type SubjectWorkspace,
   type RevealPracticeAnswerInput,
   type RevealPracticeAnswerResult,
+  type DeletePracticeSetInput,
 } from './shared/ipc';
 import {
   DEFAULT_OLLAMA_BASE_URL,
@@ -117,6 +118,8 @@ const selectionContextSchema = z.object({
   kind: z.enum([
     'division-summary',
     'page-text',
+    'chat-question',
+    'chat-answer',
     'practice-question',
     'practice-answer',
   ]),
@@ -149,6 +152,10 @@ const generatePracticeSchema = z.object({
 
 const revealPracticeAnswerSchema = z.object({
   questionId: z.string().uuid(),
+});
+
+const deletePracticeSetSchema = z.object({
+  practiceSetId: z.string().uuid(),
 });
 
 let appPaths: AppPaths | null = null;
@@ -913,7 +920,7 @@ const registerIpcHandlers = (): void => {
       await ensureInitialized();
       const parsed = revealPracticeAnswerSchema.parse(input);
       const db = getDatabaseOrThrow();
-      const question = db.revealPracticeQuestion(parsed.questionId);
+      const question = db.togglePracticeQuestionReveal(parsed.questionId);
 
       if (!question) {
         throw new Error('Practice question not found');
@@ -937,6 +944,19 @@ const registerIpcHandlers = (): void => {
           updatedAt: formatTimestamp(question.updatedAt),
         },
       };
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.PRACTICE_DELETE,
+    async (_event, input: DeletePracticeSetInput): Promise<void> => {
+      await ensureInitialized();
+      const parsed = deletePracticeSetSchema.parse(input);
+      const deleted = getDatabaseOrThrow().deletePracticeSet(parsed.practiceSetId);
+
+      if (!deleted) {
+        throw new Error('Practice set not found');
+      }
     },
   );
 

@@ -12,6 +12,7 @@ import {
   divisionSourcePagesTable,
   jobsTable,
   practiceQuestionsTable,
+  practiceSetSourcePagesTable,
   practiceSetsTable,
   problemTypesTable,
   settingsTable,
@@ -34,6 +35,7 @@ const schema = {
   chatMessagesTable,
   practiceSetsTable,
   practiceQuestionsTable,
+  practiceSetSourcePagesTable,
 };
 
 const runtimeRequire = createRequire(__filename);
@@ -178,6 +180,7 @@ export type PracticeQuestionRow = {
 export type PracticeSetRecord = {
   practiceSet: PracticeSetRow;
   questions: PracticeQuestionRow[];
+  sourcePages: SubjectPageContextRow[];
 };
 
 export type SubjectPageContextRow = {
@@ -219,6 +222,7 @@ export type InsertChatMessageInput = Omit<ChatMessageRow, 'createdAt'>;
 
 export type InsertPracticeSetInput = {
   practiceSet: Omit<PracticeSetRow, 'createdAt' | 'updatedAt'>;
+  sourcePageIds: string[];
   questions: Array<Omit<PracticeQuestionRow, 'practiceSetId' | 'createdAt' | 'updatedAt'>>;
 };
 
@@ -472,6 +476,20 @@ export class DatabaseService {
       CREATE INDEX IF NOT EXISTS practice_questions_set_idx
       ON practice_questions(practice_set_id, question_index);
     `);
+
+    this.sqlite.exec(`
+      CREATE TABLE IF NOT EXISTS practice_set_source_pages (
+        id TEXT PRIMARY KEY,
+        practice_set_id TEXT NOT NULL,
+        page_id TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+    `);
+
+    this.sqlite.exec(`
+      CREATE INDEX IF NOT EXISTS practice_set_source_pages_set_idx
+      ON practice_set_source_pages(practice_set_id, page_id);
+    `);
   }
 
   getSetting(key: string): SettingRow | null {
@@ -608,6 +626,10 @@ export class DatabaseService {
         .map((row) => row.id);
       for (const practiceSetId of practiceSetIds) {
         this.db
+          .delete(practiceSetSourcePagesTable)
+          .where(eq(practiceSetSourcePagesTable.practiceSetId, practiceSetId))
+          .run();
+        this.db
           .delete(practiceQuestionsTable)
           .where(eq(practiceQuestionsTable.practiceSetId, practiceSetId))
           .run();
@@ -729,6 +751,9 @@ export class DatabaseService {
   }
 
   listPracticeSetsBySubject(subjectId: string, divisionId?: string): PracticeSetRecord[] {
+    const pageMap = new Map(
+      this.getReadySubjectPages(subjectId).map((page) => [page.pageId, page]),
+    );
     const practiceSets = this.db
       .select()
       .from(practiceSetsTable)
@@ -748,6 +773,13 @@ export class DatabaseService {
         .where(eq(practiceQuestionsTable.practiceSetId, practiceSet.id))
         .orderBy(practiceQuestionsTable.questionIndex)
         .all(),
+      sourcePages: this.db
+        .select()
+        .from(practiceSetSourcePagesTable)
+        .where(eq(practiceSetSourcePagesTable.practiceSetId, practiceSet.id))
+        .all()
+        .map((row) => pageMap.get(row.pageId))
+        .filter((page): page is SubjectPageContextRow => Boolean(page)),
     }));
   }
 
@@ -768,6 +800,20 @@ export class DatabaseService {
     const transaction = this.sqlite.transaction(() => {
       this.db.insert(practiceSetsTable).values(practiceSetRow).run();
 
+      if (input.sourcePageIds.length > 0) {
+        this.db
+          .insert(practiceSetSourcePagesTable)
+          .values(
+            input.sourcePageIds.map((pageId, index) => ({
+              id: `${practiceSetRow.id}:source:${index}:${pageId}`,
+              practiceSetId: practiceSetRow.id,
+              pageId,
+              createdAt: now,
+            })),
+          )
+          .run();
+      }
+
       if (questionRows.length > 0) {
         this.db.insert(practiceQuestionsTable).values(questionRows).run();
       }
@@ -780,10 +826,13 @@ export class DatabaseService {
     return {
       practiceSet: practiceSetRow,
       questions: questionRows,
+      sourcePages: this.getReadySubjectPages(practiceSetRow.subjectId).filter((page) =>
+        input.sourcePageIds.includes(page.pageId),
+      ),
     };
   }
 
-  revealPracticeQuestion(questionId: string): PracticeQuestionRow | null {
+  togglePracticeQuestionReveal(questionId: string): PracticeQuestionRow | null {
     const existing =
       this.db
         .select()
@@ -795,15 +844,12 @@ export class DatabaseService {
       return null;
     }
 
-    if (existing.revealed) {
-      return existing;
-    }
-
     const updatedAt = createNow();
+    const nextRevealed = !existing.revealed;
     this.db
       .update(practiceQuestionsTable)
       .set({
-        revealed: true,
+        revealed: nextRevealed,
         updatedAt,
       })
       .where(eq(practiceQuestionsTable.id, questionId))
@@ -827,7 +873,7 @@ export class DatabaseService {
 
     return {
       ...existing,
-      revealed: true,
+      revealed: nextRevealed,
       updatedAt,
     };
   }
@@ -861,11 +907,54 @@ export class DatabaseService {
       .where(eq(practiceQuestionsTable.practiceSetId, practiceSet.id))
       .orderBy(practiceQuestionsTable.questionIndex)
       .all();
+    const pageMap = new Map(
+      this.getReadySubjectPages(practiceSet.subjectId).map((page) => [page.pageId, page]),
+    );
+    const sourcePages = this.db
+      .select()
+      .from(practiceSetSourcePagesTable)
+      .where(eq(practiceSetSourcePagesTable.practiceSetId, practiceSet.id))
+      .all()
+      .map((row) => pageMap.get(row.pageId))
+      .filter((page): page is SubjectPageContextRow => Boolean(page));
 
     return {
       practiceSet,
       questions,
+      sourcePages,
     };
+  }
+
+  deletePracticeSet(practiceSetId: string): PracticeSetRow | null {
+    const practiceSet =
+      this.db
+        .select()
+        .from(practiceSetsTable)
+        .where(eq(practiceSetsTable.id, practiceSetId))
+        .get() ?? null;
+
+    if (!practiceSet) {
+      return null;
+    }
+
+    const transaction = this.sqlite.transaction(() => {
+      this.db
+        .delete(practiceSetSourcePagesTable)
+        .where(eq(practiceSetSourcePagesTable.practiceSetId, practiceSetId))
+        .run();
+      this.db
+        .delete(practiceQuestionsTable)
+        .where(eq(practiceQuestionsTable.practiceSetId, practiceSetId))
+        .run();
+      this.db
+        .delete(practiceSetsTable)
+        .where(eq(practiceSetsTable.id, practiceSetId))
+        .run();
+      this.touchSubject(practiceSet.subjectId);
+    });
+
+    transaction();
+    return practiceSet;
   }
 
   listJobsBySubject(subjectId: string, type?: string): JobRow[] {

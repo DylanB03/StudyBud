@@ -128,3 +128,10 @@ export const practiceQuestionsTable = sqliteTable('practice_questions', {
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull(),
 });
+
+export const practiceSetSourcePagesTable = sqliteTable('practice_set_source_pages', {
+  id: text('id').primaryKey(),
+  practiceSetId: text('practice_set_id').notNull(),
+  pageId: text('page_id').notNull(),
+  createdAt: integer('created_at').notNull(),
+});

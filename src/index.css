@@ -492,6 +492,10 @@ code {
   min-height: 0;
 }
 
+.workspace-grid-resizable {
+  align-items: start;
+}
+
 .workspace-sidebar,
 .workspace-main,
 .workspace-chat {
@@ -505,6 +509,32 @@ code {
   position: sticky;
   top: 0;
   align-self: start;
+}
+
+.workspace-resizer {
+  position: relative;
+  align-self: stretch;
+  min-height: 100%;
+  cursor: col-resize;
+  border-radius: 999px;
+  background: transparent;
+}
+
+.workspace-resizer::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  width: 4px;
+  margin: 0 auto;
+  border-radius: 999px;
+  background: rgba(117, 215, 249, 0.16);
+  transition: background 120ms ease, box-shadow 120ms ease;
+}
+
+.workspace-resizer:hover::before,
+.workspace-resizer.active::before {
+  background: rgba(117, 215, 249, 0.46);
+  box-shadow: 0 0 0 1px rgba(117, 215, 249, 0.18);
 }
 
 .analysis-panel {
@@ -692,6 +722,36 @@ code {
   gap: 14px;
 }
 
+.practice-set-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-main);
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.practice-set-toggle:hover {
+  color: #f6fbff;
+}
+
+.practice-set-toggle-arrow {
+  color: var(--accent);
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.practice-set-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .practice-question-header {
   display: flex;
   justify-content: space-between;
@@ -796,6 +856,38 @@ code {
 .citation-section {
   display: grid;
   gap: 12px;
+}
+
+.grounding-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  border: 1px solid rgba(117, 215, 249, 0.18);
+  border-radius: 12px;
+  background: rgba(52, 183, 243, 0.08);
+  color: var(--text-main);
+  padding: 10px 12px;
+}
+
+.grounding-toggle:hover,
+.grounding-toggle.expanded {
+  border-color: rgba(117, 215, 249, 0.34);
+  background: rgba(52, 183, 243, 0.12);
+}
+
+.grounding-toggle-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+}
+
+.grounding-toggle-arrow {
+  color: var(--accent);
+  font-size: 0.95rem;
+  line-height: 1;
 }
 
 .citation-grid {
@@ -935,9 +1027,98 @@ code {
 }
 
 .chat-message-copy {
-  white-space: pre-wrap;
   line-height: 1.55;
   color: var(--text-main);
+}
+
+.chat-message-rich {
+  display: grid;
+  gap: 10px;
+  overflow-wrap: anywhere;
+}
+
+.chat-message-rich > :first-child {
+  margin-top: 0;
+}
+
+.chat-message-rich > :last-child {
+  margin-bottom: 0;
+}
+
+.chat-message-rich p,
+.chat-message-rich ul,
+.chat-message-rich ol,
+.chat-message-rich blockquote,
+.chat-message-rich pre,
+.chat-message-rich table {
+  margin: 0;
+}
+
+.chat-message-rich ul,
+.chat-message-rich ol {
+  padding-left: 1.25rem;
+}
+
+.chat-message-rich li + li {
+  margin-top: 4px;
+}
+
+.chat-message-rich h1,
+.chat-message-rich h2,
+.chat-message-rich h3,
+.chat-message-rich h4 {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--text-main);
+}
+
+.chat-message-rich strong {
+  color: #f6fbff;
+}
+
+.chat-message-rich a {
+  color: var(--accent);
+}
+
+.chat-message-rich code {
+  border-radius: 8px;
+  padding: 0.14rem 0.35rem;
+  background: rgba(117, 215, 249, 0.12);
+  font-family: 'Cascadia Code', 'Consolas', monospace;
+  font-size: 0.92em;
+}
+
+.chat-message-rich pre {
+  overflow: auto;
+  border: 1px solid rgba(117, 215, 249, 0.12);
+  border-radius: 12px;
+  padding: 12px;
+  background: rgba(5, 12, 24, 0.8);
+}
+
+.chat-message-rich pre code {
+  display: block;
+  padding: 0;
+  background: transparent;
+}
+
+.chat-message-rich blockquote {
+  border-left: 3px solid rgba(117, 215, 249, 0.36);
+  padding-left: 12px;
+  color: var(--text-muted);
+}
+
+.chat-message-rich hr {
+  width: 100%;
+  border: none;
+  border-top: 1px solid rgba(117, 215, 249, 0.16);
+  margin: 0;
+}
+
+.chat-message-rich .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 8px 0;
 }
 
 .chat-followups {
@@ -1175,6 +1356,11 @@ mark {
   overflow: hidden;
 }
 
+body.is-resizing-panels {
+  cursor: col-resize;
+  user-select: none;
+}
+
 .document-card-meta,
 .job-card-meta {
   display: block;
@@ -1229,6 +1415,10 @@ mark {
     grid-template-columns: 1fr;
   }
 
+  .workspace-grid-resizable {
+    grid-template-columns: 1fr !important;
+  }
+
   .workspace-header,
   .subject-open-button,
   .document-inspector-header,
@@ -1244,6 +1434,10 @@ mark {
 
   .workspace-chat {
     position: static;
+  }
+
+  .workspace-resizer {
+    display: none;
   }
 
   .page-text-list {

@@ -1,3 +1,5 @@
+import { parseJsonWithRecovery } from './json-repair';
+
 const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses';
 
 export const DEFAULT_OPENAI_INGESTION_MODEL = 'gpt-5.4-mini';
@@ -130,7 +132,7 @@ export const createOpenAiStructuredResponse = async <T>(
   const outputText = extractOutputText(payload);
 
   try {
-    return JSON.parse(outputText) as T;
+    return parseJsonWithRecovery<T>(outputText);
   } catch (error) {
     throw new Error(
       error instanceof Error

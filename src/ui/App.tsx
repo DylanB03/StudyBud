@@ -46,6 +46,14 @@ type SelectionPopupPosition = {
 };
 type SelectionUiMode = 'chip' | 'popup';
 
+const DEFAULT_CHAT_PANEL_WIDTH = 380;
+const CHAT_PANEL_MIN_WIDTH = 280;
+const CHAT_PANEL_MAX_WIDTH = 720;
+const WORKSPACE_SIDEBAR_WIDTH = 280;
+const WORKSPACE_MAIN_MIN_WIDTH = 460;
+const WORKSPACE_RESIZER_WIDTH = 10;
+const WORKSPACE_GAP_TOTAL = 54;
+
 const initialSettings: SettingsState = {
   aiProvider: 'openai',
   openAiApiKeyConfigured: false,
@@ -205,9 +213,26 @@ export const App = () => {
     useState<PracticeDifficulty>('medium');
   const [practiceCount, setPracticeCount] = useState(3);
   const [practiceBusy, setPracticeBusy] = useState(false);
+  const [chatPanelWidth, setChatPanelWidth] = useState<number>(() => {
+    if (typeof window === 'undefined') {
+      return DEFAULT_CHAT_PANEL_WIDTH;
+    }
+
+    const stored = Number(window.localStorage.getItem('studybud.chatPanelWidth'));
+    if (!Number.isFinite(stored)) {
+      return DEFAULT_CHAT_PANEL_WIDTH;
+    }
+
+    return Math.min(
+      CHAT_PANEL_MAX_WIDTH,
+      Math.max(CHAT_PANEL_MIN_WIDTH, stored),
+    );
+  });
+  const [isResizingChatPanel, setIsResizingChatPanel] = useState(false);
   const [busy, setBusy] = useState(false);
   const [pendingChatPrompt, setPendingChatPrompt] = useState<string | null>(null);
   const pendingPageSelectionRef = useRef<number | null>(null);
+  const workspaceGridRef = useRef<HTMLDivElement | null>(null);
   const [error, setError] = useState<string | null>(
     studybud
       ? null
@@ -287,6 +312,62 @@ export const App = () => {
       window.clearInterval(intervalId);
     };
   }, [activeAnalysis]);
+
+  useEffect(() => {
+    window.localStorage.setItem(
+      'studybud.chatPanelWidth',
+      String(chatPanelWidth),
+    );
+  }, [chatPanelWidth]);
+
+  useEffect(() => {
+    if (!isResizingChatPanel) {
+      document.body.classList.remove('is-resizing-panels');
+      return;
+    }
+
+    document.body.classList.add('is-resizing-panels');
+
+    const handlePointerMove = (event: MouseEvent) => {
+      const grid = workspaceGridRef.current;
+      if (!grid) {
+        return;
+      }
+
+      const bounds = grid.getBoundingClientRect();
+      const computedWidth = bounds.right - event.clientX;
+      const maxChatWidth = Math.min(
+        CHAT_PANEL_MAX_WIDTH,
+        Math.max(
+          CHAT_PANEL_MIN_WIDTH,
+          bounds.width -
+            WORKSPACE_SIDEBAR_WIDTH -
+            WORKSPACE_MAIN_MIN_WIDTH -
+            WORKSPACE_RESIZER_WIDTH -
+            WORKSPACE_GAP_TOTAL,
+        ),
+      );
+      const nextWidth = Math.min(
+        maxChatWidth,
+        Math.max(CHAT_PANEL_MIN_WIDTH, computedWidth),
+      );
+
+      setChatPanelWidth(nextWidth);
+    };
+
+    const stopResizing = () => {
+      setIsResizingChatPanel(false);
+    };
+
+    window.addEventListener('mousemove', handlePointerMove);
+    window.addEventListener('mouseup', stopResizing);
+
+    return () => {
+      document.body.classList.remove('is-resizing-panels');
+      window.removeEventListener('mousemove', handlePointerMove);
+      window.removeEventListener('mouseup', stopResizing);
+    };
+  }, [isResizingChatPanel]);
 
   const reloadDashboardState = async () => {
     if (!studybud) {
@@ -746,7 +827,10 @@ export const App = () => {
       kind,
       selectedText,
       surroundingText,
-      sourcePageIds: currentDivision.sourcePages.map((page) => page.pageId),
+      sourcePageIds:
+        practiceSet.sourcePages.length > 0
+          ? practiceSet.sourcePages.map((page) => page.pageId)
+          : currentDivision.sourcePages.map((page) => page.pageId),
     });
   };
 
@@ -772,6 +856,37 @@ export const App = () => {
       question,
       window.getSelection()?.toString() ?? '',
     );
+  };
+
+  const handleChatMessageSelection = (message: {
+    role: 'user' | 'assistant';
+    content: string;
+    citations: CitationRef[];
+    selectionContext: SelectionContext | null;
+  }) => {
+    if (!workspace || !currentDivision) {
+      return;
+    }
+
+    const selectedText = window.getSelection()?.toString() ?? '';
+    const sourcePageIds =
+      message.citations.length > 0
+        ? message.citations.map((citation) => citation.pageId)
+        : message.selectionContext?.sourcePageIds?.length
+          ? message.selectionContext.sourcePageIds
+          : currentDivision.sourcePages.map((page) => page.pageId);
+
+    captureSelectionDraft({
+      kind: message.role === 'assistant' ? 'chat-answer' : 'chat-question',
+      selectedText,
+      surroundingText: message.content,
+      sourcePageIds,
+      pageId: message.selectionContext?.pageId ?? null,
+      documentId: message.selectionContext?.documentId ?? null,
+      documentName: message.selectionContext?.documentName ?? null,
+      documentKind: message.selectionContext?.documentKind ?? null,
+      pageNumber: message.selectionContext?.pageNumber ?? null,
+    });
   };
 
   const handleCitationEvidenceSelection = (citation: CitationRef) => {
@@ -1188,7 +1303,7 @@ export const App = () => {
     }
   };
 
-  const handleRevealPracticeAnswer = async (questionId: string) => {
+  const handleTogglePracticeAnswer = async (questionId: string) => {
     if (!studybud) {
       return;
     }
@@ -1225,7 +1340,85 @@ export const App = () => {
       setError(
         caughtError instanceof Error
           ? caughtError.message
-          : 'Could not reveal the answer key.',
+          : 'Could not update the answer key visibility.',
+      );
+    } finally {
+      setPracticeBusy(false);
+    }
+  };
+
+  const handleDeletePracticeSet = async (practiceSet: PracticeSet) => {
+    if (!studybud) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Delete the practice set "${practiceSet.problemTypeTitle}" (${practiceSet.difficulty})?`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setPracticeBusy(true);
+    setError(null);
+
+    try {
+      await studybud.deletePracticeSet({
+        practiceSetId: practiceSet.id,
+      });
+
+      setWorkspace((previous) =>
+        previous
+          ? {
+              ...previous,
+              practiceSets: previous.practiceSets.filter(
+                (item) => item.id !== practiceSet.id,
+              ),
+            }
+          : previous,
+      );
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : 'Could not delete the practice set.',
+      );
+    } finally {
+      setPracticeBusy(false);
+    }
+  };
+
+  const handleRegeneratePracticeSet = async (practiceSet: PracticeSet) => {
+    if (!studybud || !workspace) {
+      return;
+    }
+
+    setPracticeBusy(true);
+    setError(null);
+
+    try {
+      const result: GeneratePracticeResult = await studybud.generatePractice({
+        subjectId: workspace.subject.id,
+        divisionId: practiceSet.divisionId,
+        problemTypeId: practiceSet.problemTypeId,
+        difficulty: practiceSet.difficulty,
+        count: practiceSet.questionCount,
+      });
+
+      setWorkspace((previous) =>
+        previous
+          ? {
+              ...previous,
+              practiceSets: [result.practiceSet, ...previous.practiceSets],
+            }
+          : previous,
+      );
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : 'Could not regenerate the practice set.',
       );
     } finally {
       setPracticeBusy(false);
@@ -1320,7 +1513,10 @@ export const App = () => {
         ]
           .filter(Boolean)
           .join(' '),
-        sourcePageIds: currentDivision.sourcePages.map((page) => page.pageId),
+        sourcePageIds:
+          practiceSet.sourcePages.length > 0
+            ? practiceSet.sourcePages.map((page) => page.pageId)
+            : currentDivision.sourcePages.map((page) => page.pageId),
       },
     );
   };
@@ -1349,7 +1545,10 @@ export const App = () => {
         ]
           .filter(Boolean)
           .join(' '),
-        sourcePageIds: currentDivision.sourcePages.map((page) => page.pageId),
+        sourcePageIds:
+          practiceSet.sourcePages.length > 0
+            ? practiceSet.sourcePages.map((page) => page.pageId)
+            : currentDivision.sourcePages.map((page) => page.pageId),
       },
     );
   };
@@ -1712,7 +1911,13 @@ export const App = () => {
           </div>
         </header>
 
-        <div className="workspace-grid">
+        <div
+          ref={workspaceGridRef}
+          className="workspace-grid workspace-grid-resizable"
+          style={{
+            gridTemplateColumns: `280px minmax(0, 1fr) ${WORKSPACE_RESIZER_WIDTH}px ${chatPanelWidth}px`,
+          }}
+        >
           <aside className="workspace-sidebar">
             <section className="sidebar-section">
               <div className="sidebar-section-title">
@@ -1931,7 +2136,13 @@ export const App = () => {
                       setPracticeCount(Math.min(8, Math.max(1, value)))
                     }
                     onGenerate={() => void handleGeneratePractice()}
-                    onRevealAnswer={(questionId) => void handleRevealPracticeAnswer(questionId)}
+                    onRevealAnswer={(questionId) => void handleTogglePracticeAnswer(questionId)}
+                    onDeletePracticeSet={(practiceSet) => {
+                      void handleDeletePracticeSet(practiceSet);
+                    }}
+                    onRegeneratePracticeSet={(practiceSet) => {
+                      void handleRegeneratePracticeSet(practiceSet);
+                    }}
                     onExplainQuestion={(practiceSet, question) => {
                       void handleExplainPracticeQuestion(practiceSet, question);
                     }}
@@ -2102,6 +2313,14 @@ export const App = () => {
             )}
           </section>
 
+          <div
+            className={`workspace-resizer${isResizingChatPanel ? ' active' : ''}`}
+            role="separator"
+            aria-label="Resize chat panel"
+            aria-orientation="vertical"
+            onMouseDown={() => setIsResizingChatPanel(true)}
+          />
+
           <aside className="workspace-chat">
             <DivisionChatPanel
               messages={divisionChatMessages}
@@ -2115,6 +2334,7 @@ export const App = () => {
                     }}
                     onOpenCitation={openCitationSourcePage}
                     onSelectCitationText={handleCitationEvidenceSelection}
+                    onSelectMessageText={handleChatMessageSelection}
                     activeCitationKey={selectedCitationKey}
                     documentBytesCache={documentBytesCache}
                   />

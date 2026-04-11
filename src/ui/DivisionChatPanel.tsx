@@ -1,7 +1,8 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import type { CitationRef, DivisionChatMessage } from '../shared/ipc';
 import { CitationPreviewCard } from './CitationPreviewCard';
+import { RichMessageContent } from './RichMessageContent';
 
 const getCitationKey = (citation: CitationRef): string => {
   return `${citation.documentId}:${citation.pageId}`;
@@ -17,6 +18,7 @@ type DivisionChatPanelProps = {
   onUseFollowup: (value: string) => void;
   onOpenCitation: (citation: CitationRef) => void;
   onSelectCitationText: (citation: CitationRef) => void;
+  onSelectMessageText: (message: DivisionChatMessage) => void;
   activeCitationKey: string | null;
   documentBytesCache: Record<string, Uint8Array>;
 };
@@ -31,10 +33,14 @@ export const DivisionChatPanel = ({
   onUseFollowup,
   onOpenCitation,
   onSelectCitationText,
+  onSelectMessageText,
   activeCitationKey,
   documentBytesCache,
 }: DivisionChatPanelProps) => {
   const endRef = useRef<HTMLDivElement | null>(null);
+  const [expandedGroundingIds, setExpandedGroundingIds] = useState<
+    Record<string, boolean>
+  >({});
 
   const getSelectionLabel = (message: DivisionChatMessage): string => {
     if (!message.selectionContext) {
@@ -46,6 +52,10 @@ export const DivisionChatPanel = ({
         return 'Analysis selection';
       case 'page-text':
         return `Page ${message.selectionContext.pageNumber ?? '?'}`;
+      case 'chat-question':
+        return 'Chat question';
+      case 'chat-answer':
+        return 'Chat answer';
       case 'practice-question':
         return 'Practice question';
       case 'practice-answer':
@@ -61,6 +71,13 @@ export const DivisionChatPanel = ({
       behavior: messages.length > 0 ? 'smooth' : 'auto',
     });
   }, [messages.length, pendingPrompt]);
+
+  const toggleGrounding = (messageId: string) => {
+    setExpandedGroundingIds((previous) => ({
+      ...previous,
+      [messageId]: !previous[messageId],
+    }));
+  };
 
   return (
     <section className="analysis-panel">
@@ -91,26 +108,45 @@ export const DivisionChatPanel = ({
                 </div>
               ) : null}
 
-              <div className="chat-message-copy">{message.content}</div>
+              <div
+                className="chat-message-copy"
+                onMouseUp={() => onSelectMessageText(message)}
+              >
+                <RichMessageContent content={message.content} />
+              </div>
 
               {message.role === 'assistant' && message.citations.length > 0 ? (
                 <div className="citation-section">
-                  <div className="sidebar-section-title">
-                    <h4>Grounding</h4>
+                  <button
+                    type="button"
+                    className={`grounding-toggle${
+                      expandedGroundingIds[message.id] ? ' expanded' : ''
+                    }`}
+                    onClick={() => toggleGrounding(message.id)}
+                  >
+                    <span className="grounding-toggle-label">
+                      <span className="grounding-toggle-arrow" aria-hidden="true">
+                        {expandedGroundingIds[message.id] ? '▾' : '▸'}
+                      </span>
+                      <span>Grounding</span>
+                    </span>
                     <span>{message.citations.length}</span>
-                  </div>
-                  <div className="citation-grid">
-                    {message.citations.map((citation) => (
-                      <CitationPreviewCard
-                        key={`${message.id}:${citation.pageId}`}
-                        citation={citation}
-                        documentBytes={documentBytesCache[citation.documentId] ?? null}
-                        active={activeCitationKey === getCitationKey(citation)}
-                        onClick={() => onOpenCitation(citation)}
-                        onTextSelection={onSelectCitationText}
-                      />
-                    ))}
-                  </div>
+                  </button>
+
+                  {expandedGroundingIds[message.id] ? (
+                    <div className="citation-grid">
+                      {message.citations.map((citation) => (
+                        <CitationPreviewCard
+                          key={`${message.id}:${citation.pageId}`}
+                          citation={citation}
+                          documentBytes={documentBytesCache[citation.documentId] ?? null}
+                          active={activeCitationKey === getCitationKey(citation)}
+                          onClick={() => onOpenCitation(citation)}
+                          onTextSelection={onSelectCitationText}
+                        />
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
 
@@ -140,7 +176,9 @@ export const DivisionChatPanel = ({
                 <strong>You</strong>
                 <span>Sending...</span>
               </div>
-              <div className="chat-message-copy">{pendingPrompt}</div>
+              <div className="chat-message-copy">
+                <RichMessageContent content={pendingPrompt} />
+              </div>
             </article>
             <article className="chat-message-card chat-role-assistant chat-role-pending">
               <div className="chat-message-header">
@@ -148,7 +186,7 @@ export const DivisionChatPanel = ({
                 <span>Thinking...</span>
               </div>
               <div className="chat-message-copy">
-                Generating a grounded answer with supporting citations...
+                <RichMessageContent content="Generating a grounded answer with supporting citations..." />
               </div>
             </article>
           </>

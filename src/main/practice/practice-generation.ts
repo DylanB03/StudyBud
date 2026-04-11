@@ -13,6 +13,7 @@ import type {
   SubjectChunkContextRow,
   SubjectPageContextRow,
 } from '../db/database';
+import { extractCitationExcerpt } from '../analysis/citation-excerpts';
 
 const MAX_SOURCE_PAGES = 6;
 const MAX_SOURCE_CHUNKS = 10;
@@ -31,6 +32,9 @@ const practiceResponseSchema = z.object({
 });
 
 type PracticeResponse = z.infer<typeof practiceResponseSchema>;
+type RawPracticeResponse = {
+  questions?: unknown;
+};
 
 const practiceResponseSchemaDefinition: Record<string, unknown> = {
   type: 'object',
@@ -115,6 +119,12 @@ const pickRelevantChunks = (
 };
 
 const mapPracticeSetRecord = (record: PracticeSetRecord): PracticeSet => {
+  const clueText = [
+    record.practiceSet.problemTypeTitle,
+    record.practiceSet.difficulty,
+    ...record.questions.map((question) => question.prompt),
+  ];
+
   return {
     id: record.practiceSet.id,
     subjectId: record.practiceSet.subjectId,
@@ -125,6 +135,21 @@ const mapPracticeSetRecord = (record: PracticeSetRecord): PracticeSet => {
     questionCount: record.practiceSet.questionCount,
     createdAt: new Date(record.practiceSet.createdAt).toISOString(),
     updatedAt: new Date(record.practiceSet.updatedAt).toISOString(),
+    sourcePages: record.sourcePages.map((page) => {
+      const excerpt = extractCitationExcerpt(page.textContent, clueText);
+
+      return {
+        pageId: page.pageId,
+        documentId: page.documentId,
+        documentName: page.documentName,
+        documentKind: page.documentKind as 'lecture' | 'homework',
+        pageNumber: page.pageNumber,
+        excerptText: excerpt.excerptText,
+        highlightText: excerpt.highlightText,
+        thumbnailAssetPath: null,
+        textBounds: null,
+      };
+    }),
     questions: record.questions.map((question) => ({
       id: question.id,
       questionIndex: question.questionIndex,
@@ -134,6 +159,57 @@ const mapPracticeSetRecord = (record: PracticeSetRecord): PracticeSet => {
       createdAt: new Date(question.createdAt).toISOString(),
       updatedAt: new Date(question.updatedAt).toISOString(),
     })),
+  };
+};
+
+const normalizeQuestionField = (value: unknown, maxLength: number): string => {
+  if (typeof value !== 'string') {
+    return '';
+  }
+
+  return value.replace(/\s+/g, ' ').trim().slice(0, maxLength);
+};
+
+const repairPracticeResponse = (
+  rawResponse: RawPracticeResponse,
+  requestedCount: number,
+): PracticeResponse => {
+  const rawQuestions = Array.isArray(rawResponse.questions)
+    ? rawResponse.questions
+    : [];
+
+  const repairedQuestions = rawQuestions
+    .map((question) => {
+      if (!question || typeof question !== 'object') {
+        return null;
+      }
+
+      const prompt = normalizeQuestionField(
+        'prompt' in question ? question.prompt : '',
+        1600,
+      );
+      const answer = normalizeQuestionField(
+        'answer' in question ? question.answer : '',
+        1800,
+      );
+
+      if (!prompt || !answer) {
+        return null;
+      }
+
+      return { prompt, answer };
+    })
+    .filter((question): question is { prompt: string; answer: string } => Boolean(question))
+    .slice(0, requestedCount);
+
+  if (repairedQuestions.length === 0) {
+    throw new Error(
+      'Practice generation returned malformed content and no valid questions could be recovered.',
+    );
+  }
+
+  return {
+    questions: repairedQuestions,
   };
 };
 
@@ -265,7 +341,7 @@ export const generatePracticeSet = async (input: {
     retrievedChunks,
   });
 
-  const rawResponse = await createStructuredResponse<PracticeResponse>({
+  const rawResponse = await createStructuredResponse<RawPracticeResponse>({
     providerConfig: input.providerConfig,
     systemPrompt: practiceSystemPrompt,
     userPrompt,
@@ -273,9 +349,32 @@ export const generatePracticeSet = async (input: {
     schema: practiceResponseSchemaDefinition,
   });
 
-  const parsed = practiceResponseSchema.parse(rawResponse);
+  const parsed = (() => {
+    const schemaResult = practiceResponseSchema.safeParse(rawResponse);
+    if (schemaResult.success) {
+      return schemaResult.data;
+    }
+
+    return repairPracticeResponse(rawResponse, input.count);
+  })();
   const questionCount = Math.min(input.count, parsed.questions.length);
   const practiceSetId = randomUUID();
+  const persistedSourcePageIds = (() => {
+    const sourcePageIds = divisionRecord.sourcePages
+      .filter((page) => {
+        return retrievedChunks.some((chunk) => chunk.pageId === page.pageId);
+      })
+      .slice(0, MAX_SOURCE_PAGES)
+      .map((page) => page.pageId);
+
+    if (sourcePageIds.length > 0) {
+      return sourcePageIds;
+    }
+
+    return divisionRecord.sourcePages
+      .slice(0, MAX_SOURCE_PAGES)
+      .map((page) => page.pageId);
+  })();
   const record = input.database.insertPracticeSet({
     practiceSet: {
       id: practiceSetId,
@@ -286,6 +385,7 @@ export const generatePracticeSet = async (input: {
       difficulty: input.difficulty,
       questionCount,
     },
+    sourcePageIds: persistedSourcePageIds,
     questions: parsed.questions.slice(0, questionCount).map((question, index) => ({
       id: randomUUID(),
       questionIndex: index + 1,

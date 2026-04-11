@@ -1,6 +1,8 @@
 import fs from 'node:fs';
 import { URL } from 'node:url';
 
+import { parseJsonWithRecovery } from './json-repair';
+
 const DEFAULT_OLLAMA_HOST = 'http://localhost:11434';
 const OLLAMA_CHAT_URL_PATH = '/api/chat';
 const OLLAMA_TAGS_URL_PATH = '/api/tags';
@@ -205,7 +207,7 @@ export const createOllamaStructuredResponse = async <T>(
   }
 
   try {
-    return JSON.parse(payload.message.content) as T;
+    return parseJsonWithRecovery<T>(payload.message.content);
   } catch (error) {
     throw new Error(
       error instanceof Error

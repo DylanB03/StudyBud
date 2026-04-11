@@ -391,7 +391,7 @@ describe('DatabaseService', () => {
     expect(persisted[1]?.content).toContain('Convolution');
   });
 
-  it('persists practice sets and reveals answers', () => {
+  it('persists practice sets and toggles answer visibility', () => {
     const { database } = createContext();
 
     database.createSubjectWithId('Statics', 'subject-practice');
@@ -406,6 +406,7 @@ describe('DatabaseService', () => {
         difficulty: 'medium',
         questionCount: 2,
       },
+      sourcePageIds: [],
       questions: [
         {
           id: 'practice-question-1',
@@ -430,11 +431,52 @@ describe('DatabaseService', () => {
     expect(listed).toHaveLength(1);
     expect(listed[0]?.questions[0]?.revealed).toBe(false);
 
-    const revealed = database.revealPracticeQuestion('practice-question-1');
+    const revealed = database.togglePracticeQuestionReveal('practice-question-1');
     expect(revealed?.revealed).toBe(true);
 
     const refreshed = database.getPracticeSetByQuestionId('practice-question-1');
     expect(refreshed?.questions[0]?.revealed).toBe(true);
     expect(refreshed?.practiceSet.problemTypeTitle).toBe('Free-body diagram setup');
+
+    const hiddenAgain = database.togglePracticeQuestionReveal('practice-question-1');
+    expect(hiddenAgain?.revealed).toBe(false);
+
+    const refreshedAgain = database.getPracticeSetByQuestionId('practice-question-1');
+    expect(refreshedAgain?.questions[0]?.revealed).toBe(false);
+  });
+
+  it('deletes a practice set together with its questions', () => {
+    const { database } = createContext();
+
+    database.createSubjectWithId('Dynamics', 'subject-practice-delete');
+    database.insertPracticeSet({
+      practiceSet: {
+        id: 'practice-set-delete',
+        subjectId: 'subject-practice-delete',
+        divisionId: 'division-dynamics',
+        problemTypeId: 'problem-dynamics',
+        problemTypeTitle: 'Acceleration analysis',
+        difficulty: 'hard',
+        questionCount: 1,
+      },
+      sourcePageIds: [],
+      questions: [
+        {
+          id: 'practice-question-delete',
+          questionIndex: 1,
+          prompt: 'Determine tangential and normal acceleration components.',
+          answer: 'Differentiate speed for tangential and use v^2 / r for normal.',
+          revealed: false,
+        },
+      ],
+    });
+
+    const deleted = database.deletePracticeSet('practice-set-delete');
+
+    expect(deleted?.id).toBe('practice-set-delete');
+    expect(
+      database.listPracticeSetsBySubject('subject-practice-delete'),
+    ).toHaveLength(0);
+    expect(database.getPracticeSetByQuestionId('practice-question-delete')).toBeNull();
   });
 });

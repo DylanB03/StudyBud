@@ -59,6 +59,11 @@ const groundedChatSystemPrompt = [
   'Answer directly, clearly, and in a study-friendly way.',
   'If the question goes beyond the provided material, say what is uncertain and stay grounded.',
   'Prefer concise explanations with concrete references to the cited material.',
+  'Do not mention PAGE refs, citation ids, or source labels in the visible answer text.',
+  'Keep all source attribution in citationPageRefs only so the UI can show grounding separately.',
+  'When you write mathematics, format it as LaTeX using $...$ for inline math and $$...$$ for displayed equations.',
+  'Use ASCII math notation inside LaTeX, such as N_1, x^2, \\frac{a}{b}, and \\times.',
+  'Do not emit raw LaTeX commands outside math delimiters unless you are showing literal code.',
 ].join(' ');
 
 const normalizeWhitespace = (value: string): string => {
@@ -93,6 +98,17 @@ const parseJsonArray = <T>(value: string, fallback: T[]): T[] => {
   } catch {
     return fallback;
   }
+};
+
+const sanitizeVisibleAnswerText = (value: string): string => {
+  return value
+    .replace(/\s*\(?\[?PAGE_\d{3}\]?\)?/g, '')
+    .replace(/\(\s*,/g, '(')
+    .replace(/,\s*\)/g, ')')
+    .replace(/\(\s*\)/g, '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 };
 
 const mapChatMessageRow = (row: ChatMessageRow): DivisionChatMessage => {
@@ -197,7 +213,9 @@ const buildPrompt = (input: {
     'Course material evidence:',
     pageBlocks.join('\n\n---\n\n'),
     '',
-    'Return a grounded answer. Use citationPageRefs only from the PAGE refs above.',
+    'Return a grounded answer.',
+    'Use citationPageRefs only from the PAGE refs above.',
+    'Do not include PAGE refs or source labels anywhere in answerMarkdown.',
   ].join('\n');
 };
 
@@ -305,6 +323,9 @@ export const answerDivisionChat = async (input: {
   });
 
   const parsed = groundedAnswerSchema.parse(rawResponse);
+  const sanitizedAnswerMarkdown = sanitizeVisibleAnswerText(
+    parsed.answerMarkdown.trim(),
+  );
   const citationPages =
     parsed.citationPageRefs.length > 0
       ? parsed.citationPageRefs
@@ -340,7 +361,7 @@ export const answerDivisionChat = async (input: {
       subjectId: input.subjectId,
       divisionId: input.divisionId,
       role: 'assistant',
-      content: parsed.answerMarkdown.trim(),
+      content: sanitizedAnswerMarkdown,
       citationsJson: JSON.stringify(citations),
       followupsJson: JSON.stringify(parsed.followups),
       selectionContextJson: input.selectionContext
@@ -358,7 +379,7 @@ export const answerDivisionChat = async (input: {
     userMessage: mapChatMessageRow(userRow),
     assistantMessage: mapChatMessageRow(assistantRow),
     answer: {
-      answerMarkdown: parsed.answerMarkdown.trim(),
+      answerMarkdown: sanitizedAnswerMarkdown,
       citations,
       followups: parsed.followups,
     },

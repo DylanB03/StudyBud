@@ -27,8 +27,9 @@ It should stay grounded in the repo, not in aspirational product goals.
   - Phase 2: implemented with ongoing stability work
   - Phase 3: implemented
   - Phase 4: implemented
+  - Phase 5: implemented with a follow-up improvement pass
 - Not yet implemented:
-  - Phase 5 onward in the roadmap (`practice generation`, `research/browser`, `video suggestions`)
+  - Phase 6 onward in the roadmap (`research/browser`, `video suggestions`, release hardening)
 
 ## What The App Can Do Now
 - Electron desktop app with `main`, `preload`, and `renderer` separation
@@ -55,12 +56,18 @@ It should stay grounded in the repo, not in aspirational product goals.
 - selection-based clarification with contextual popup question entry
 - right-side answer/chat rail inside the workspace
 - persisted chat history per division
+- generated practice sets per division/problem type/difficulty
+- hidden answer keys with persisted reveal/hide state
+- practice-question and practice-answer explanation flow through grounded chat
+- saved practice history under each subject/division
+- practice set source-page persistence for later explanations
+- practice set collapse / regenerate / delete controls
 - provider-based AI configuration:
   - OpenAI
   - local Ollama
 
 ## What Is Partially Implemented
-- The AI layer is provider-aware for the implemented analysis and grounded chat flows, but not yet for later planned features like practice generation
+- The AI layer is provider-aware for analysis, grounded chat, and practice generation
 - The overall student-facing polish is still below the eventual product vision, even though the roadmap-defined Phase 4 scope is now in place
 
 ## General Structure
@@ -82,11 +89,15 @@ It should stay grounded in the repo, not in aspirational product goals.
 - Phase 2 analysis: [src/main/analysis/subject-analysis.ts](/home/dylan/Gitrepos/allrepos/StudyBud/src/main/analysis/subject-analysis.ts)
 - Citation excerpt helper: [src/main/analysis/citation-excerpts.ts](/home/dylan/Gitrepos/allrepos/StudyBud/src/main/analysis/citation-excerpts.ts)
 - Grounded chat service: [src/main/chat/grounded-chat.ts](/home/dylan/Gitrepos/allrepos/StudyBud/src/main/chat/grounded-chat.ts)
+- Practice generation service: [src/main/practice/practice-generation.ts](/home/dylan/Gitrepos/allrepos/StudyBud/src/main/practice/practice-generation.ts)
+- AI JSON repair helper: [src/main/ai/json-repair.ts](/home/dylan/Gitrepos/allrepos/StudyBud/src/main/ai/json-repair.ts)
 - Renderer root: [src/renderer.tsx](/home/dylan/Gitrepos/allrepos/StudyBud/src/renderer.tsx)
 - Main UI: [src/ui/App.tsx](/home/dylan/Gitrepos/allrepos/StudyBud/src/ui/App.tsx)
 - PDF viewer UI: [src/ui/PdfViewer.tsx](/home/dylan/Gitrepos/allrepos/StudyBud/src/ui/PdfViewer.tsx)
 - Citation preview UI: [src/ui/CitationPreviewCard.tsx](/home/dylan/Gitrepos/allrepos/StudyBud/src/ui/CitationPreviewCard.tsx)
 - Division chat UI: [src/ui/DivisionChatPanel.tsx](/home/dylan/Gitrepos/allrepos/StudyBud/src/ui/DivisionChatPanel.tsx)
+- Practice UI: [src/ui/PracticePanel.tsx](/home/dylan/Gitrepos/allrepos/StudyBud/src/ui/PracticePanel.tsx)
+- Rich chat markdown/math renderer: [src/ui/RichMessageContent.tsx](/home/dylan/Gitrepos/allrepos/StudyBud/src/ui/RichMessageContent.tsx)
 - Selection popup UI: [src/ui/SelectionQuestionPopup.tsx](/home/dylan/Gitrepos/allrepos/StudyBud/src/ui/SelectionQuestionPopup.tsx)
 - Selection chip UI: [src/ui/SelectionAskChip.tsx](/home/dylan/Gitrepos/allrepos/StudyBud/src/ui/SelectionAskChip.tsx)
 - Styling: [src/index.css](/home/dylan/Gitrepos/allrepos/StudyBud/src/index.css)
@@ -143,6 +154,18 @@ It should stay grounded in the repo, not in aspirational product goals.
   - lightweight `Ask about this` chip on text selection
   - popup question composer near the selection
   - answers still land in the persistent chat rail
+
+### Phase 5
+- generated practice sets by division problem type and difficulty
+- persisted practice sets and questions in SQLite
+- hidden answer keys with persisted reveal/hide state
+- practice question / answer explanation through the same grounded chat system
+- practice set source-page persistence so explanations can use the actual generation evidence
+- practice set management in the workspace:
+  - collapse
+  - regenerate
+  - delete
+- malformed-output recovery for practice generation on imperfect model responses
 
 ## Major Changes Added Outside The Original Roadmap / Plan
 These are important because they are real codebase commitments, even though they were not originally the “next planned feature.”
@@ -221,6 +244,45 @@ Why it exists:
 - user-requested
 - better matches the intended “inside a subject” study mode
 
+### Rich Chat Rendering
+Not explicitly called out in the roadmap, but important for making the study/chat flow readable.
+
+Implemented:
+- markdown rendering in division chat
+- KaTeX-backed math rendering
+- fallback superscript/subscript handling for plain-text model output
+- grounding collapsed by default behind an expandable row
+- chat-message text is now selectable and can feed into the same question popup flow
+
+Why it exists:
+- user-requested
+- raw markdown/math output was too literal and hard to study from
+
+### Resizable Workspace Split
+Not explicitly called out in the roadmap.
+
+Implemented:
+- draggable splitter between the main workspace and the right-side chat rail
+- persisted width in local storage
+- responsive fallback that hides the splitter on narrow layouts
+
+Why it exists:
+- user-requested
+- makes the study/chat balance more usable in a desktop context
+
+### Practice Workflow Hardening
+Partly roadmap-aligned, partly iterative utility work after the initial Phase 5 implementation.
+
+Implemented:
+- answer reveal can be toggled back off
+- malformed-output recovery for practice generation
+- source-page refs persisted with each practice set
+- delete and regenerate for practice sets
+- lightweight renderer coverage for the Practice Studio
+
+Why it exists:
+- Phase 5 was functionally complete but still too brittle and too append-only for real use
+
 ### WSL-Aware Ollama Fallback
 Not in the roadmap.
 
@@ -283,6 +345,18 @@ Why it exists:
 - fixed a citation-navigation state bug where switching documents from a citation could snap the viewer back to page 1 during document load
 - added grounded division chat with citation-backed answers and persisted message history
 - added selection-context clarification on analysis text and extracted page text
+- changed grounded chat prompting and sanitization so PAGE refs stay out of visible answer text while grounding still appears separately
+- added markdown + math rendering in chat so assistant answers read as study content instead of raw markdown
+- added math-friendly fallback rendering for plain-text model output such as `x^2`, `N_1`, and near-LaTeX fragments
+- made division chat message text itself highlightable for follow-up questions
+
+### Practice / Phase 5 Fixes And Improvements
+- initial Phase 5 implementation added persisted practice generation, hidden answers, and explanation hooks
+- answer reveal state is now toggleable, not one-way
+- practice generation now recovers from fenced/partially malformed JSON instead of failing as eagerly
+- practice sets persist their own source-page refs rather than relying only on the division-level source set
+- practice sets can now be collapsed, regenerated, and deleted
+- practice explanations now prefer the practice set’s persisted source pages when available
 
 ## Current Data Model Shape
 Persisted entities now effectively include:
@@ -297,8 +371,11 @@ Persisted entities now effectively include:
 - `problem_types`
 - `unassigned_pages`
 - `chat_messages`
+- `practice_sets`
+- `practice_questions`
+- `practice_set_source_pages`
 
-This is enough for the current Phase 4 implementation, but not yet for practice/research flows.
+This is enough for the current Phase 5 implementation, but not yet for Phase 6 research/browser flows.
 
 ## Current IPC Surface
 Implemented channels in [src/shared/ipc.ts](/home/dylan/Gitrepos/allrepos/StudyBud/src/shared/ipc.ts):
@@ -314,18 +391,23 @@ Implemented channels in [src/shared/ipc.ts](/home/dylan/Gitrepos/allrepos/StudyB
 - `subjects:import`
 - `subjects:analyze`
 - `chat:ask`
+- `practice:generate`
+- `practice:reveal`
+- `practice:delete`
 - `documents:delete`
 - `documents:detail`
 - `documents:data`
 
 ## Current UX Notes
 - The app is now beyond a pure import/viewer scaffold, and the workspace matches the intended Phase 4 study structure
+- The app is now beyond a pure import/viewer scaffold, and the workspace matches the intended Phase 5 study structure
 - The subject workspace is now a focused mode:
   - left workspace column for divisions/documents
   - center study content and PDF work area
   - right-side chat/answer rail
+- The workspace/main vs chat rail split is now resizable by dragging the divider
 - Selection-based clarification now starts from a lightweight inline chip and popup instead of a stagnant bottom composer state
-- Citation preview cards, focused evidence, and grounded chat answers are present, but the overall experience is still an engineering MVP rather than a polished study product
+- Citation preview cards, focused evidence, grounded chat answers, and Practice Studio are present, but the overall experience is still an engineering MVP rather than a polished study product
 - The app currently feels like an internal MVP / engineering build rather than a polished learning product
 - The settings UI is now more complex because it includes:
   - provider choice
@@ -336,11 +418,11 @@ Implemented channels in [src/shared/ipc.ts](/home/dylan/Gitrepos/allrepos/StudyB
 ## Known Limitations
 - No OCR support
 - No embeddings/retrieval yet
-- No practice generation yet
 - No web-search/browser/video workflow yet
 - Current Ollama analysis path still uses a fairly heavy single-pass structured extraction prompt
   - this is likely too demanding for weaker local models on large subjects
 - Grounded chat currently uses a relatively simple retrieval strategy over division source pages/chunks rather than a stronger embedding-backed retriever
+- Practice generation is provider-aware now, but still uses a single-pass generation approach and would likely benefit from stronger provider-specific prompting/templates for weaker local models
 - Streaming is not implemented yet
   - progress visibility exists
   - token-by-token/partial-response UX does not
@@ -366,26 +448,28 @@ Historically there are automated tests for:
 - subject analysis persistence
 - citation excerpt selection
 - grounded chat persistence and answer flow
+- AI JSON repair
+- practice generation persistence
+- practice generation malformed-output recovery
+- practice set deletion
+- Practice Studio renderer output
 
 Latest full verification completed with:
 - `npm run lint`
 - `npm run typecheck`
-- `npm test` with 24 passing tests
+- `npm test` with 30 passing tests
 - `npm run package`
-
-Latest incremental UX verification also completed with:
-- `npm run lint`
-- `npm run typecheck`
 
 Important caveat:
 - `npm test` has been environment-sensitive because `better-sqlite3` rebuild state can diverge between Node and Electron contexts on different machines
 - treat failing tests on a fresh machine as potentially native-build related until proven otherwise
 
 ## Recommended Next Steps
-1. Start Phase 5 with practice generation and saved practice state.
-   - practice set schema
-   - persistence model
-   - per-division generation UI
+1. Start Phase 6 with the research/browser workflow.
+   - right-side research drawer
+   - search suggestions
+   - in-app browser host
+   - outbound video suggestions
 2. Strengthen the current grounded-chat retrieval path.
    - better relevance ranking
    - stronger citation selection
@@ -398,10 +482,10 @@ Important caveat:
    - quick health check
    - tiny chat test
    - clear success/failure messaging
-5. Continue improving workspace polish:
-   - resizable/collapsible workspace columns
-   - more selectable citation surfaces
-   - better manual GUI smoke coverage
+5. Continue improving practice quality and control:
+   - provider-specific practice prompting/templates
+   - optional practice-set export / print flow
+   - stronger per-question source grounding
 6. Continue to treat native rebuild issues on fresh environments as a standing maintenance concern.
 
 ## Practical Dev Notes
@@ -429,6 +513,7 @@ The most accurate description now is:
 - real but still maturing Phase 2
 - solid Phase 3
 - solid Phase 4
+- solid Phase 5
 - multiple user-driven stabilizations and environment-driven fixes layered on top
 
-Future work should treat the current provider abstraction, data-path configuration, analysis diagnostics, division-first workspace, citation-focus flow, grounded chat flow, selection popup UX, and subject deletion flow as established parts of the app, even though they were not all part of the original MVP assumptions.
+Future work should treat the current provider abstraction, data-path configuration, analysis diagnostics, division-first workspace, citation-focus flow, grounded chat flow, Practice Studio, selection popup UX, resizable workspace split, and subject/practice deletion flows as established parts of the app, even though they were not all part of the original MVP assumptions.

@@ -1,3 +1,5 @@
+import { useEffect, useState } from 'react';
+
 import type {
   PracticeDifficulty,
   PracticeQuestion,
@@ -16,6 +18,8 @@ type PracticePanelProps = {
   onCountChange: (value: number) => void;
   onGenerate: () => void;
   onRevealAnswer: (questionId: string) => void;
+  onDeletePracticeSet: (practiceSet: PracticeSet) => void;
+  onRegeneratePracticeSet: (practiceSet: PracticeSet) => void;
   onExplainQuestion: (practiceSet: PracticeSet, question: PracticeQuestion) => void;
   onExplainAnswer: (practiceSet: PracticeSet, question: PracticeQuestion) => void;
   onQuestionSelection: (practiceSet: PracticeSet, question: PracticeQuestion) => void;
@@ -45,6 +49,8 @@ export const PracticePanel = ({
   onCountChange,
   onGenerate,
   onRevealAnswer,
+  onDeletePracticeSet,
+  onRegeneratePracticeSet,
   onExplainQuestion,
   onExplainAnswer,
   onQuestionSelection,
@@ -53,6 +59,25 @@ export const PracticePanel = ({
   generateBusy,
   chatBusy,
 }: PracticePanelProps) => {
+  const [collapsedSets, setCollapsedSets] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    setCollapsedSets((previous) => {
+      const next: Record<string, boolean> = {};
+      for (const practiceSet of practiceSets) {
+        next[practiceSet.id] = previous[practiceSet.id] ?? false;
+      }
+      return next;
+    });
+  }, [practiceSets]);
+
+  const toggleCollapsed = (practiceSetId: string) => {
+    setCollapsedSets((previous) => ({
+      ...previous,
+      [practiceSetId]: !previous[practiceSetId],
+    }));
+  };
+
   return (
     <section className="analysis-panel practice-panel">
       <div className="sidebar-section-title">
@@ -131,19 +156,51 @@ export const PracticePanel = ({
             <article key={practiceSet.id} className="practice-set-card">
               <div className="analysis-division-header">
                 <div>
-                  <h4>{practiceSet.problemTypeTitle}</h4>
+                  <button
+                    type="button"
+                    className="practice-set-toggle"
+                    onClick={() => toggleCollapsed(practiceSet.id)}
+                  >
+                    <span className="practice-set-toggle-arrow" aria-hidden="true">
+                      {collapsedSets[practiceSet.id] ? '▸' : '▾'}
+                    </span>
+                    <span>{practiceSet.problemTypeTitle}</span>
+                  </button>
                   <p>
                     {practiceSet.difficulty} difficulty • {practiceSet.questionCount}{' '}
                     question{practiceSet.questionCount === 1 ? '' : 's'} • generated{' '}
                     {formatDateTime(practiceSet.createdAt)}
                   </p>
+                  <p>
+                    Based on {practiceSet.sourcePages.length} source page
+                    {practiceSet.sourcePages.length === 1 ? '' : 's'}
+                  </p>
                 </div>
-                <span className="analysis-count-pill">{practiceSet.difficulty}</span>
+                <div className="practice-set-actions">
+                  <span className="analysis-count-pill">{practiceSet.difficulty}</span>
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={() => onRegeneratePracticeSet(practiceSet)}
+                    disabled={generateBusy}
+                  >
+                    Regenerate
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={() => onDeletePracticeSet(practiceSet)}
+                    disabled={generateBusy}
+                  >
+                    Delete
+                  </button>
+                </div>
               </div>
 
-              <div className="practice-question-list">
-                {practiceSet.questions.map((question) => (
-                  <article key={question.id} className="practice-question-card">
+              {!collapsedSets[practiceSet.id] ? (
+                <div className="practice-question-list">
+                  {practiceSet.questions.map((question) => (
+                    <article key={question.id} className="practice-question-card">
                     <div className="practice-question-header">
                       <strong>Question {question.questionIndex}</strong>
                       <div className="practice-question-actions">
@@ -182,6 +239,14 @@ export const PracticePanel = ({
                             <button
                               type="button"
                               className="ghost-button"
+                              onClick={() => onRevealAnswer(question.id)}
+                              disabled={generateBusy}
+                            >
+                              Hide Answer Key
+                            </button>
+                            <button
+                              type="button"
+                              className="ghost-button"
                               onClick={() => onExplainAnswer(practiceSet, question)}
                               disabled={chatBusy}
                             >
@@ -197,9 +262,10 @@ export const PracticePanel = ({
                         </p>
                       </div>
                     )}
-                  </article>
-                ))}
-              </div>
+                    </article>
+                  ))}
+                </div>
+              ) : null}
             </article>
           ))}
         </div>

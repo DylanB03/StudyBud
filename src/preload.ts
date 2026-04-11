@@ -3,6 +3,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 import {
   type ChatAskInput,
   type AnalyzeSubjectInput,
+  type DeletePracticeSetInput,
   type GeneratePracticeInput,
   IPC_CHANNELS,
   type CreateSubjectInput,
@@ -36,6 +37,8 @@ const api: StudyBudApi = {
     ipcRenderer.invoke(IPC_CHANNELS.PRACTICE_GENERATE, input),
   revealPracticeAnswer: (input: RevealPracticeAnswerInput) =>
     ipcRenderer.invoke(IPC_CHANNELS.PRACTICE_REVEAL, input),
+  deletePracticeSet: (input: DeletePracticeSetInput) =>
+    ipcRenderer.invoke(IPC_CHANNELS.PRACTICE_DELETE, input),
   deleteDocument: (documentId: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.DOCUMENTS_DELETE, documentId),
   getDocumentDetail: (documentId: string) =>

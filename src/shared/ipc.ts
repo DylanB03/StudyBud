@@ -13,6 +13,7 @@ export const IPC_CHANNELS = {
   CHAT_ASK: 'chat:ask',
   PRACTICE_GENERATE: 'practice:generate',
   PRACTICE_REVEAL: 'practice:reveal',
+  PRACTICE_DELETE: 'practice:delete',
   DOCUMENTS_DELETE: 'documents:delete',
   DOCUMENTS_DETAIL: 'documents:detail',
   DOCUMENTS_DATA: 'documents:data',
@@ -201,6 +202,8 @@ export type SelectionContext = {
   kind:
     | 'division-summary'
     | 'page-text'
+    | 'chat-question'
+    | 'chat-answer'
     | 'practice-question'
     | 'practice-answer';
   subjectId: string;
@@ -268,6 +271,7 @@ export type PracticeSet = {
   questionCount: number;
   createdAt: string;
   updatedAt: string;
+  sourcePages: CitationRef[];
   questions: PracticeQuestion[];
 };
 
@@ -292,6 +296,10 @@ export type RevealPracticeAnswerResult = {
   question: PracticeQuestion;
 };
 
+export type DeletePracticeSetInput = {
+  practiceSetId: string;
+};
+
 export interface StudyBudApi {
   getAppInfo: () => Promise<AppInfo>;
   getSettings: () => Promise<SettingsState>;
@@ -309,6 +317,7 @@ export interface StudyBudApi {
   revealPracticeAnswer: (
     input: RevealPracticeAnswerInput,
   ) => Promise<RevealPracticeAnswerResult>;
+  deletePracticeSet: (input: DeletePracticeSetInput) => Promise<void>;
   deleteDocument: (documentId: string) => Promise<void>;
   getDocumentDetail: (documentId: string) => Promise<SourceDocumentDetail>;
   readDocumentData: (documentId: string) => Promise<Uint8Array>;
