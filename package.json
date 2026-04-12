@@ -1,12 +1,12 @@
 {
   "name": "studybud",
-  "productName": "studybud",
+  "productName": "StudyBud",
   "version": "1.0.0",
-  "description": "StudyBud desktop app foundation",
+  "description": "AI-powered desktop study workspace for lecture and homework PDFs",
   "main": ".vite/build/main.js",
   "private": true,
   "scripts": {
-    "rebuild:native:node": "npm rebuild better-sqlite3 --build-from-source",
+    "rebuild:native:node": "npm rebuild better-sqlite3",
     "rebuild:native:electron": "electron-rebuild -f -w better-sqlite3",
     "start": "npm run rebuild:native:electron && electron-forge start",
     "dev": "npm run rebuild:native:electron && electron-forge start",
@@ -15,7 +15,10 @@
     "publish": "electron-forge publish",
     "lint": "eslint --ext .ts,.tsx .",
     "typecheck": "tsc --noEmit",
-    "test": "npm run rebuild:native:node && vitest run"
+    "test": "vitest run",
+    "test:check-native": "node scripts/check-better-sqlite3-node.cjs",
+    "test:prepared": "npm run test:check-native && npm run test",
+    "verify": "npm run typecheck && npm run lint && npm run test:prepared && npm run package"
   },
   "keywords": [],
   "author": {

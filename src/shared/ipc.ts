@@ -33,6 +33,11 @@ export type AppInfo = {
   userDataPath: string;
   dataPath: string;
   encryptionAvailable: boolean;
+  platform: string;
+  nodeVersion: string;
+  electronVersion: string;
+  runningInWsl: boolean;
+  nativeDatabaseReady: boolean;
 };
 
 export type AiProvider = 'openai' | 'ollama';
@@ -121,6 +126,9 @@ export type SourceDocumentSummary = {
   relativePath: string | null;
   mimeType: string;
   pageCount: number;
+  extractedTextLength: number;
+  pagesWithExtractedText: number;
+  extractionState: 'normal' | 'limited' | 'image-only';
   importStatus: DocumentImportStatus;
   errorMessage: string | null;
   createdAt: string;

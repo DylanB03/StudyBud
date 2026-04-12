@@ -8,6 +8,8 @@ type SelectionQuestionPopupProps = {
   };
   question: string;
   busy: boolean;
+  aiActionsEnabled?: boolean;
+  disabledReason?: string | null;
   onQuestionChange: (value: string) => void;
   onSubmit: () => void;
   onCancel: () => void;
@@ -18,6 +20,8 @@ export const SelectionQuestionPopup = ({
   position,
   question,
   busy,
+  aiActionsEnabled = true,
+  disabledReason = null,
   onQuestionChange,
   onSubmit,
   onCancel,
@@ -55,13 +59,16 @@ export const SelectionQuestionPopup = ({
         onChange={(event) => onQuestionChange(event.target.value)}
         placeholder="Ask a question about this highlighted text..."
         rows={3}
-        disabled={busy}
+        disabled={busy || !aiActionsEnabled}
         autoFocus
       />
+      {!aiActionsEnabled && disabledReason ? (
+        <p className="selection-popup-context">{disabledReason}</p>
+      ) : null}
       <div className="selection-popup-actions">
         <button
           type="button"
-          disabled={busy || !question.trim()}
+          disabled={busy || !question.trim() || !aiActionsEnabled}
           onClick={onSubmit}
         >
           Ask Question

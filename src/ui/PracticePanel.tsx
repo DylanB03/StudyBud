@@ -6,6 +6,7 @@ import type {
   PracticeSet,
   SubjectAnalysisDivision,
 } from '../shared/ipc';
+import { DismissibleBanner } from './DismissibleBanner';
 
 type PracticePanelProps = {
   division: SubjectAnalysisDivision;
@@ -27,6 +28,10 @@ type PracticePanelProps = {
   canGenerate: boolean;
   generateBusy: boolean;
   chatBusy: boolean;
+  aiActionsEnabled?: boolean;
+  disabledReason?: string | null;
+  errorMessage?: string | null;
+  onRetryGenerate?: (() => void) | null;
 };
 
 const formatDateTime = (value: string): string => {
@@ -58,6 +63,10 @@ export const PracticePanel = ({
   canGenerate,
   generateBusy,
   chatBusy,
+  aiActionsEnabled = true,
+  disabledReason = null,
+  errorMessage = null,
+  onRetryGenerate = null,
 }: PracticePanelProps) => {
   const [collapsedSets, setCollapsedSets] = useState<Record<string, boolean>>({});
 
@@ -84,6 +93,31 @@ export const PracticePanel = ({
         <h3>Practice Studio</h3>
         <span>{practiceSets.length}</span>
       </div>
+
+      {errorMessage ? (
+        <DismissibleBanner
+          dismissKey={`practice-error:${errorMessage}`}
+          className="panel-banner"
+          action={
+            onRetryGenerate ? (
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={onRetryGenerate}
+                disabled={generateBusy}
+              >
+                Retry
+              </button>
+            ) : null
+          }
+        >
+          <span>{errorMessage}</span>
+        </DismissibleBanner>
+      ) : null}
+
+      {!aiActionsEnabled && disabledReason ? (
+        <div className="warning-banner">{disabledReason}</div>
+      ) : null}
 
       <div className="practice-generator-card">
         <div className="practice-generator-grid">
@@ -131,7 +165,11 @@ export const PracticePanel = ({
         </div>
 
         <div className="practice-generator-actions">
-          <button type="button" onClick={onGenerate} disabled={!canGenerate}>
+          <button
+            type="button"
+            onClick={onGenerate}
+            disabled={!canGenerate || !aiActionsEnabled}
+          >
             {generateBusy ? 'Generating Practice...' : 'Generate Practice'}
           </button>
           <p className="analysis-muted">
@@ -208,7 +246,7 @@ export const PracticePanel = ({
                           type="button"
                           className="ghost-button"
                           onClick={() => onExplainQuestion(practiceSet, question)}
-                          disabled={chatBusy}
+                          disabled={chatBusy || !aiActionsEnabled}
                         >
                           Explain Question
                         </button>
@@ -248,7 +286,7 @@ export const PracticePanel = ({
                               type="button"
                               className="ghost-button"
                               onClick={() => onExplainAnswer(practiceSet, question)}
-                              disabled={chatBusy}
+                              disabled={chatBusy || !aiActionsEnabled}
                             >
                               Explain Answer
                             </button>

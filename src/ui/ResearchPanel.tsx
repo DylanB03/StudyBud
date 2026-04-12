@@ -7,6 +7,7 @@ import type {
   ResearchVideoResult,
   ResearchWebResult,
 } from '../shared/ipc';
+import { DismissibleBanner } from './DismissibleBanner';
 import { RichMessageContent } from './RichMessageContent';
 
 type ResearchPanelProps = {
@@ -16,6 +17,7 @@ type ResearchPanelProps = {
   videoQuery: string;
   onVideoQueryChange: (value: string) => void;
   onSearch: () => void;
+  onRetrySearch?: (() => void) | null;
   searchBusy: boolean;
   searchError: string | null;
   searchResult: ResearchSearchResult | null;
@@ -47,6 +49,7 @@ export const ResearchPanel = ({
   videoQuery,
   onVideoQueryChange,
   onSearch,
+  onRetrySearch = null,
   searchBusy,
   searchError,
   searchResult,
@@ -191,7 +194,26 @@ export const ResearchPanel = ({
         </section>
       )}
 
-      {searchError ? <div className="warning-banner">{searchError}</div> : null}
+      {searchError ? (
+        <DismissibleBanner
+          dismissKey={`research-error:${searchError}`}
+          className="panel-banner"
+          action={
+            onRetrySearch ? (
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={onRetrySearch}
+                disabled={searchBusy}
+              >
+                Retry Search
+              </button>
+            ) : null
+          }
+        >
+          <span>{searchError}</span>
+        </DismissibleBanner>
+      ) : null}
 
       {searchResult ? (
         <div ref={resultSectionRef} className="research-results">

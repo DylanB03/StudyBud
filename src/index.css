@@ -469,6 +469,16 @@ code {
   background: var(--success);
 }
 
+.pill-limited {
+  color: #3a2400;
+  background: rgba(250, 204, 21, 0.9);
+}
+
+.pill-image-only {
+  color: #fef2f2;
+  background: rgba(220, 38, 38, 0.88);
+}
+
 .pill-status-completed,
 .pill-status-partial {
   color: #052114;
@@ -1525,6 +1535,12 @@ code {
   overflow-wrap: anywhere;
 }
 
+.document-viewer-section {
+  display: grid;
+  gap: 14px;
+  scroll-margin-top: 18px;
+}
+
 .pdf-viewer-grid {
   display: grid;
   grid-template-columns: 104px minmax(0, 1fr);
@@ -1605,6 +1621,40 @@ code {
   min-width: 0;
 }
 
+.page-text-panel-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.page-text-toggle {
+  border: 1px solid rgba(117, 215, 249, 0.2);
+  border-radius: 999px;
+  background: rgba(52, 183, 243, 0.09);
+  color: var(--text-main);
+  padding: 7px 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.page-text-toggle:hover {
+  background: rgba(52, 183, 243, 0.16);
+}
+
+.page-text-toggle-arrow {
+  color: var(--accent);
+  font-size: 0.85rem;
+}
+
+.page-text-collapsed-state {
+  margin: 0;
+}
+
 .page-text-card {
   width: 100%;
   text-align: left;
@@ -1680,6 +1730,49 @@ body.is-resizing-panels {
   border-radius: 12px;
   padding: 10px 12px;
   margin-bottom: 16px;
+}
+
+.banner-shell {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.banner-main {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.banner-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.banner-dismiss {
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  line-height: 1;
+  opacity: 0.88;
+}
+
+.banner-dismiss:hover {
+  opacity: 1;
+}
+
+.panel-banner {
+  margin-bottom: 0;
 }
 
 @media (max-width: 1180px) {

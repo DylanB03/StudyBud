@@ -16,12 +16,14 @@ import type {
   SelectionContext,
   SettingsState,
   SourceDocumentDetail,
+  SourceDocumentSummary,
   SubjectAnalysisDivision,
   SubjectSummary,
   SubjectWorkspace,
 } from '../shared/ipc';
 import { CitationPreviewCard } from './CitationPreviewCard';
 import { DivisionChatPanel } from './DivisionChatPanel';
+import { DismissibleBanner } from './DismissibleBanner';
 import { PracticePanel } from './PracticePanel';
 import { ResearchPanel } from './ResearchPanel';
 import { SelectionAskChip } from './SelectionAskChip';
@@ -49,6 +51,19 @@ type SelectionPopupPosition = {
 };
 type SelectionUiMode = 'chip' | 'popup';
 type WorkspaceRightTab = 'chat' | 'research';
+type ChatRetryRequest = {
+  prompt: string;
+  selectionContext: SelectionContext | null;
+};
+type PracticeRetryRequest = {
+  problemTypeId: string;
+  difficulty: PracticeDifficulty;
+  count: number;
+};
+type ResearchRetryRequest = {
+  query: string;
+  videoQuery: string;
+};
 
 const DEFAULT_CHAT_PANEL_WIDTH = 380;
 const CHAT_PANEL_MIN_WIDTH = 280;
@@ -160,6 +175,20 @@ const buildCitationTextSnippet = (
   return `${prefix}${normalizedText.slice(start, end).trim()}${suffix}`;
 };
 
+const getExtractionWarningMessage = (
+  extractionState: SourceDocumentSummary['extractionState'],
+): string | null => {
+  if (extractionState === 'image-only') {
+    return 'This PDF imported, but StudyBud could not extract selectable text from it. It is likely scanned or image-only, so analysis and chat will be limited.';
+  }
+
+  if (extractionState === 'limited') {
+    return 'This PDF only produced limited selectable text during import. Some summaries, citations, and practice generation may be incomplete.';
+  }
+
+  return null;
+};
+
 const getFirstReadyDocumentId = (
   workspace: SubjectWorkspace,
 ): string | null => {
@@ -172,6 +201,14 @@ const getFirstReadyDocumentId = (
 
 const getStudyBudApi = () => {
   return window.studybud ?? null;
+};
+
+const getNavigatorOnline = (): boolean => {
+  if (typeof navigator === 'undefined') {
+    return true;
+  }
+
+  return navigator.onLine;
 };
 
 const initialResearchBrowserState: ResearchBrowserState = {
@@ -222,8 +259,13 @@ export const App = () => {
   const [activeAnalysis, setActiveAnalysis] = useState<ActiveAnalysisState | null>(
     null,
   );
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [chatInput, setChatInput] = useState('');
   const [chatBusy, setChatBusy] = useState(false);
+  const [chatError, setChatError] = useState<string | null>(null);
+  const [lastChatRequest, setLastChatRequest] = useState<ChatRetryRequest | null>(
+    null,
+  );
   const [selectionDraft, setSelectionDraft] = useState<SelectionDraft | null>(null);
   const [selectionQuestionInput, setSelectionQuestionInput] = useState('');
   const [selectionPopupPosition, setSelectionPopupPosition] =
@@ -237,17 +279,24 @@ export const App = () => {
     useState<PracticeDifficulty>('medium');
   const [practiceCount, setPracticeCount] = useState(3);
   const [practiceBusy, setPracticeBusy] = useState(false);
+  const [practiceError, setPracticeError] = useState<string | null>(null);
+  const [lastPracticeRequest, setLastPracticeRequest] =
+    useState<PracticeRetryRequest | null>(null);
   const [rightRailTab, setRightRailTab] = useState<WorkspaceRightTab>('chat');
   const [researchQueryInput, setResearchQueryInput] = useState('');
   const [researchVideoQueryInput, setResearchVideoQueryInput] = useState('');
   const [researchBusy, setResearchBusy] = useState(false);
   const [researchError, setResearchError] = useState<string | null>(null);
+  const [lastResearchRequest, setLastResearchRequest] =
+    useState<ResearchRetryRequest | null>(null);
   const [researchResult, setResearchResult] = useState<ResearchSearchResult | null>(
     null,
   );
   const [researchBrowserState, setResearchBrowserState] =
     useState<ResearchBrowserState>(initialResearchBrowserState);
   const [researchBrowserUrlInput, setResearchBrowserUrlInput] = useState('');
+  const [isOnline, setIsOnline] = useState<boolean>(getNavigatorOnline);
+  const [isPageTextExpanded, setIsPageTextExpanded] = useState(false);
   const [chatPanelWidth, setChatPanelWidth] = useState<number>(() => {
     if (typeof window === 'undefined') {
       return DEFAULT_CHAT_PANEL_WIDTH;
@@ -268,6 +317,7 @@ export const App = () => {
   const [pendingChatPrompt, setPendingChatPrompt] = useState<string | null>(null);
   const pendingPageSelectionRef = useRef<number | null>(null);
   const workspaceGridRef = useRef<HTMLDivElement | null>(null);
+  const pdfViewerSectionRef = useRef<HTMLElement | null>(null);
   const researchBrowserHostRef = useRef<HTMLDivElement | null>(null);
   const researchPanelRef = useRef<HTMLElement | null>(null);
   const [error, setError] = useState<string | null>(
@@ -326,6 +376,19 @@ export const App = () => {
       cancelled = true;
     };
   }, [studybud]);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   useEffect(() => {
     setAiProviderInput(settings.aiProvider);
@@ -525,12 +588,16 @@ export const App = () => {
     setDocumentBytes(null);
     setDocumentBytesCache({});
     setChatInput('');
+    setChatError(null);
     setSelectionDraft(null);
     setSelectionUiMode('chip');
     setRightRailTab('chat');
     setResearchQueryInput('');
     setResearchVideoQueryInput('');
     setResearchError(null);
+    setAnalysisError(null);
+    setPracticeError(null);
+    setChatError(null);
     setResearchResult(null);
     setResearchBrowserState(initialResearchBrowserState);
     setResearchBrowserUrlInput('');
@@ -605,6 +672,10 @@ export const App = () => {
       cancelled = true;
     };
   }, [documentBytesCache, selectedDocumentId, studybud]);
+
+  useEffect(() => {
+    setIsPageTextExpanded(false);
+  }, [selectedDocumentId]);
 
   useEffect(() => {
     const divisions = workspace?.analysis?.divisions ?? [];
@@ -836,6 +907,18 @@ export const App = () => {
     setSelectedCitationKey(getCitationKey(citation));
     setSelectedDocumentId(citation.documentId);
     setSelectedPageNumber(citation.pageNumber);
+
+    requestAnimationFrame(() => {
+      const viewerSection = pdfViewerSectionRef.current;
+      if (!viewerSection) {
+        return;
+      }
+
+      viewerSection.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      });
+    });
   };
 
   const captureSelectionDraft = (input: {
@@ -1410,6 +1493,12 @@ export const App = () => {
       return;
     }
 
+    if (!analysisReady) {
+      setAnalysisError(aiActionBlockedReason);
+      setError(aiActionBlockedReason);
+      return;
+    }
+
     const provider =
       settings.aiProvider === 'ollama'
         ? `Ollama (${settings.ollamaBaseUrl})`
@@ -1421,6 +1510,7 @@ export const App = () => {
 
     setBusy(true);
     setError(null);
+    setAnalysisError(null);
     setActiveAnalysis({
       provider,
       model,
@@ -1444,11 +1534,12 @@ export const App = () => {
 
       await refreshSubjectWorkspace(workspace.subject.id, selectedDocumentId ?? undefined);
     } catch (caughtError) {
-      setError(
+      const message =
         caughtError instanceof Error
           ? caughtError.message
-          : 'Could not analyze subject materials.',
-      );
+          : 'Could not analyze subject materials.';
+      setAnalysisError(message);
+      setError(message);
     } finally {
       setActiveAnalysis(null);
       setBusy(false);
@@ -1495,27 +1586,46 @@ export const App = () => {
     }
   };
 
-  const handleGeneratePractice = async () => {
+  const handleGeneratePractice = async (
+    requestOverride?: PracticeRetryRequest,
+  ) => {
     if (
       !studybud ||
       !workspace ||
       !currentDivision ||
-      !selectedPracticeProblemTypeId ||
-      practiceCount < 1
+      !(requestOverride?.problemTypeId ?? selectedPracticeProblemTypeId) ||
+      (requestOverride?.count ?? practiceCount) < 1
     ) {
       return;
     }
 
+    if (!analysisReady) {
+      setPracticeError(aiActionBlockedReason);
+      setError(aiActionBlockedReason);
+      return;
+    }
+
+    const nextProblemTypeId =
+      requestOverride?.problemTypeId ?? selectedPracticeProblemTypeId;
+    const nextDifficulty = requestOverride?.difficulty ?? practiceDifficulty;
+    const nextCount = requestOverride?.count ?? practiceCount;
+
     setPracticeBusy(true);
     setError(null);
+    setPracticeError(null);
+    setLastPracticeRequest({
+      problemTypeId: nextProblemTypeId,
+      difficulty: nextDifficulty,
+      count: nextCount,
+    });
 
     try {
       const result: GeneratePracticeResult = await studybud.generatePractice({
         subjectId: workspace.subject.id,
         divisionId: currentDivision.id,
-        problemTypeId: selectedPracticeProblemTypeId,
-        difficulty: practiceDifficulty,
-        count: practiceCount,
+        problemTypeId: nextProblemTypeId,
+        difficulty: nextDifficulty,
+        count: nextCount,
       });
 
       setWorkspace((previous) =>
@@ -1527,11 +1637,12 @@ export const App = () => {
           : previous,
       );
     } catch (caughtError) {
-      setError(
+      const message =
         caughtError instanceof Error
           ? caughtError.message
-          : 'Could not generate a practice set.',
-      );
+          : 'Could not generate a practice set.';
+      setPracticeError(message);
+      setError(message);
     } finally {
       setPracticeBusy(false);
     }
@@ -1671,6 +1782,12 @@ export const App = () => {
       return;
     }
 
+    if (!analysisReady) {
+      setChatError(aiActionBlockedReason);
+      setError(aiActionBlockedReason);
+      return;
+    }
+
     const trimmedPrompt = prompt.trim();
     if (!trimmedPrompt) {
       return;
@@ -1679,6 +1796,11 @@ export const App = () => {
     setChatBusy(true);
     setPendingChatPrompt(trimmedPrompt);
     setError(null);
+    setChatError(null);
+    setLastChatRequest({
+      prompt: trimmedPrompt,
+      selectionContext,
+    });
 
     try {
       const result: ChatAskResult = await studybud.askChat({
@@ -1707,11 +1829,12 @@ export const App = () => {
         closeSelectionPopup();
       }
     } catch (caughtError) {
-      setError(
+      const message =
         caughtError instanceof Error
           ? caughtError.message
-          : 'Could not send the division chat request.',
-      );
+          : 'Could not send the division chat request.';
+      setChatError(message);
+      setError(message);
     } finally {
       setPendingChatPrompt(null);
       setChatBusy(false);
@@ -1805,6 +1928,10 @@ export const App = () => {
     setResearchBusy(true);
     setResearchError(null);
     setRightRailTab('research');
+    setLastResearchRequest({
+      query: nextQuery,
+      videoQuery: nextVideoQuery,
+    });
 
     try {
       const result = await studybud.searchResearch({
@@ -1953,6 +2080,39 @@ export const App = () => {
     }
   };
 
+  const handleRetryChat = async () => {
+    if (!lastChatRequest) {
+      return;
+    }
+
+    await submitChatPrompt(
+      lastChatRequest.prompt,
+      lastChatRequest.selectionContext,
+    );
+  };
+
+  const handleRetryPractice = async () => {
+    if (!lastPracticeRequest) {
+      return;
+    }
+
+    setSelectedPracticeProblemTypeId(lastPracticeRequest.problemTypeId);
+    setPracticeDifficulty(lastPracticeRequest.difficulty);
+    setPracticeCount(lastPracticeRequest.count);
+    await handleGeneratePractice(lastPracticeRequest);
+  };
+
+  const handleRetryResearch = async () => {
+    if (!lastResearchRequest) {
+      return;
+    }
+
+    await handleSearchResearch(
+      lastResearchRequest.query,
+      lastResearchRequest.videoQuery,
+    );
+  };
+
   const handleOpenResearchWebResultExternally = async (url: string) => {
     if (!studybud) {
       return;
@@ -1993,6 +2153,12 @@ export const App = () => {
       return;
     }
 
+    if (!analysisReady) {
+      setChatError(aiActionBlockedReason);
+      setError(aiActionBlockedReason);
+      return;
+    }
+
     const prompt = selectionQuestionInput.trim();
     if (!prompt) {
       return;
@@ -2019,6 +2185,27 @@ export const App = () => {
     settings.aiProvider === 'ollama'
       ? settings.ollamaModel.trim().length > 0
       : settings.openAiApiKeyConfigured;
+  const aiActionBlockedReason =
+    settings.aiProvider === 'ollama'
+      ? 'Configure an Ollama model in Settings before running analysis, chat, or practice generation.'
+      : 'Add your OpenAI API key in Settings before running analysis, chat, or practice generation.';
+  const aiDiagnosticsStatus =
+    settings.aiProvider === 'ollama'
+      ? `${settings.ollamaModel.trim() || 'No model set'} @ ${
+          settings.ollamaBaseUrl.trim() || 'no base URL'
+        }`
+      : settings.openAiApiKeyConfigured
+        ? 'OpenAI key configured'
+        : 'OpenAI key missing';
+  const researchDiagnosticsStatus =
+    settings.braveSearchApiKeyConfigured || settings.youTubeApiKeyConfigured
+      ? [
+          settings.braveSearchApiKeyConfigured ? 'Brave API' : null,
+          settings.youTubeApiKeyConfigured ? 'YouTube API' : null,
+        ]
+          .filter(Boolean)
+          .join(' + ')
+      : 'Fallback scraping mode';
 
   const renderLibrary = () => {
     return (
@@ -2049,7 +2236,8 @@ export const App = () => {
           {subjects.length === 0 ? (
             <div className="empty-state">
               No subjects yet. Create one to start importing lecture and
-              homework PDFs.
+              homework PDFs. If you plan to analyze right away, confirm your AI
+              provider settings first.
             </div>
           ) : (
             subjects.map((subject) => (
@@ -2098,6 +2286,13 @@ export const App = () => {
           </p>
         </header>
 
+        {!isOnline ? (
+          <DismissibleBanner dismissKey="settings-offline">
+            This device currently appears offline. Cloud AI and web research providers
+            will stay unavailable until connectivity returns.
+          </DismissibleBanner>
+        ) : null}
+
         <section className="settings-card">
           <header className="settings-card-header">
             <h3>AI Settings</h3>
@@ -2121,11 +2316,11 @@ export const App = () => {
           </div>
 
           {settings.aiProvider === 'openai' && !settings.encryptionAvailable ? (
-            <div className="warning-banner">
+            <DismissibleBanner dismissKey="settings-openai-session-only">
               This device does not currently expose secure OS key storage, so
               StudyBud will keep the OpenAI API key in memory only for this app session.
               It will work until you close the app, but it will not be saved to disk.
-            </div>
+            </DismissibleBanner>
           ) : null}
 
           <form className="stack-form" onSubmit={handleSaveAiSettings}>
@@ -2237,10 +2432,10 @@ export const App = () => {
           </div>
 
           {!settings.encryptionAvailable ? (
-            <div className="warning-banner">
+            <DismissibleBanner dismissKey="settings-research-session-only">
               This device does not currently expose secure OS key storage, so research
               API keys will be kept in memory only for this app session.
-            </div>
+            </DismissibleBanner>
           ) : null}
 
           <form className="stack-form" onSubmit={handleSaveResearchSettings}>
@@ -2304,6 +2499,67 @@ export const App = () => {
               </button>
             </div>
           </form>
+        </section>
+
+        <section className="settings-card">
+          <header className="settings-card-header">
+            <h3>Diagnostics</h3>
+            <p>
+              Quick runtime health details for support, demos, and environment troubleshooting.
+            </p>
+          </header>
+
+          <div className="info-grid">
+            <div>
+              <span className="label">Connectivity</span>
+              <strong>{isOnline ? 'Online' : 'Offline'}</strong>
+            </div>
+            <div>
+              <span className="label">Platform</span>
+              <strong>
+                {appInfo
+                  ? `${appInfo.platform}${appInfo.runningInWsl ? ' (WSL)' : ''}`
+                  : 'Loading...'}
+              </strong>
+            </div>
+            <div>
+              <span className="label">Electron</span>
+              <strong>{appInfo?.electronVersion ?? 'Loading...'}</strong>
+            </div>
+            <div>
+              <span className="label">Node</span>
+              <strong>{appInfo?.nodeVersion ?? 'Loading...'}</strong>
+            </div>
+            <div>
+              <span className="label">Native DB</span>
+              <strong>
+                {appInfo?.nativeDatabaseReady ? 'Ready' : 'Not ready'}
+              </strong>
+            </div>
+            <div>
+              <span className="label">AI Status</span>
+              <strong>{aiDiagnosticsStatus}</strong>
+            </div>
+            <div>
+              <span className="label">Research Status</span>
+              <strong>{researchDiagnosticsStatus}</strong>
+            </div>
+            <div>
+              <span className="label">Safety Mode</span>
+              <strong>{settings.researchSafetyMode}</strong>
+            </div>
+          </div>
+
+          <div className="info-grid">
+            <div>
+              <span className="label">Data Path</span>
+              <code>{settings.dataPath || 'Loading...'}</code>
+            </div>
+            <div>
+              <span className="label">User Data Path</span>
+              <code>{appInfo?.userDataPath ?? 'Loading...'}</code>
+            </div>
+          </div>
         </section>
 
         <section className="settings-card">
@@ -2393,6 +2649,15 @@ export const App = () => {
     const divisionPracticeSets = (workspace.practiceSets ?? []).filter(
       (practiceSet) => practiceSet.divisionId === selectedDivision?.id,
     );
+    const latestAnalysisJob = workspace.analysisJobs[0] ?? null;
+    const extractionLimitedDocuments = workspace.documents.filter(
+      (document) =>
+        document.importStatus === 'ready' && document.extractionState !== 'normal',
+    );
+    const lowConfidenceAnalysis =
+      workspace.analysis &&
+      (workspace.analysis.unassignedPages.length > 0 ||
+        extractionLimitedDocuments.length > 0);
     const practiceGenerationReady =
       analysisReady &&
       Boolean(selectedDivision) &&
@@ -2420,7 +2685,8 @@ export const App = () => {
             <h2>{workspace.subject.name}</h2>
             <p>
               Import lecture or homework PDFs, inspect extracted documents, and
-              preview their pages before AI ingestion.
+              preview their pages before AI ingestion. Reopen this workspace any
+              time to continue from the same saved study state.
             </p>
           </div>
           <div className="workspace-actions">
@@ -2498,7 +2764,12 @@ export const App = () => {
             <section className="sidebar-section">
               <div className="sidebar-section-title">
                 <h3>Documents</h3>
-                <span>{workspace.documents.length}</span>
+                <span>
+                  {workspace.documents.length}
+                  {extractionLimitedDocuments.length > 0
+                    ? ` • ${extractionLimitedDocuments.length} flagged`
+                    : ''}
+                </span>
               </div>
 
               {workspace.documents.length === 0 ? (
@@ -2523,15 +2794,39 @@ export const App = () => {
                       >
                         <div className="document-card-header">
                           <strong>{document.originalFileName}</strong>
-                          <span className={`pill pill-${document.kind}`}>
-                            {document.kind}
-                          </span>
+                          <div className="analysis-chip-list">
+                            <span className={`pill pill-${document.kind}`}>
+                              {document.kind}
+                            </span>
+                            {document.importStatus === 'ready' &&
+                            document.extractionState !== 'normal' ? (
+                              <span
+                                className={`pill pill-${
+                                  document.extractionState === 'image-only'
+                                    ? 'image-only'
+                                    : 'limited'
+                                }`}
+                              >
+                                {document.extractionState === 'image-only'
+                                  ? 'image-only'
+                                  : 'limited text'}
+                              </span>
+                            ) : null}
+                          </div>
                         </div>
                         <span className="document-card-meta">
                           {document.importStatus === 'ready'
-                            ? `${document.pageCount} pages`
+                            ? `${document.pageCount} pages • ${document.pagesWithExtractedText}/${document.pageCount} with text`
                             : 'Import failed'}
                         </span>
+                        {document.importStatus === 'ready' &&
+                        document.extractionState !== 'normal' ? (
+                          <span className="document-card-error">
+                            {document.extractionState === 'image-only'
+                              ? 'Scanned/image-only PDF likely'
+                              : 'Only limited text was extracted'}
+                          </span>
+                        ) : null}
                         {document.errorMessage ? (
                           <span className="document-card-error">
                             {document.errorMessage}
@@ -2560,20 +2855,20 @@ export const App = () => {
                 <span>{workspace.analysis?.divisions.length ?? 0}</span>
               </div>
 
-              {workspace.analysisJobs.length > 0 ? (
+              {latestAnalysisJob ? (
                 <div className="analysis-job-banner">
                   <div className="analysis-job-copy">
-                    <strong>{workspace.analysisJobs[0]?.message}</strong>
+                    <strong>{latestAnalysisJob.message}</strong>
                     <div className="analysis-job-meta">
-                      <span>{workspace.analysisJobs[0]?.provider}</span>
-                      <span>{workspace.analysisJobs[0]?.model}</span>
+                      <span>{latestAnalysisJob.provider}</span>
+                      <span>{latestAnalysisJob.model}</span>
                       <span>
-                        Started {formatDate(workspace.analysisJobs[0]?.createdAt ?? new Date().toISOString())}
+                        Started {formatDate(latestAnalysisJob.createdAt)}
                       </span>
                     </div>
                   </div>
-                  <span className={`pill pill-status-${workspace.analysisJobs[0]?.status ?? 'running'}`}>
-                    {workspace.analysisJobs[0]?.status ?? 'running'}
+                  <span className={`pill pill-status-${latestAnalysisJob.status}`}>
+                    {latestAnalysisJob.status}
                   </span>
                 </div>
               ) : null}
@@ -2592,11 +2887,72 @@ export const App = () => {
                 </div>
               ) : null}
 
-              {!analysisReady ? (
+              {analysisError ? (
+                <DismissibleBanner
+                  dismissKey={`analysis-error:${analysisError}`}
+                  className="panel-banner"
+                  action={
+                    <button
+                      type="button"
+                      className="ghost-button"
+                      onClick={() => void handleAnalyzeSubject()}
+                      disabled={busy}
+                    >
+                      Retry Analysis
+                    </button>
+                  }
+                >
+                  <span>{analysisError}</span>
+                </DismissibleBanner>
+              ) : null}
+
+              {extractionLimitedDocuments.length > 0 ? (
+                <DismissibleBanner
+                  dismissKey={`extraction-limited:${workspace.subject.id}:${extractionLimitedDocuments
+                    .map((document) => `${document.id}:${document.extractionState}`)
+                    .join('|')}`}
+                >
+                  {extractionLimitedDocuments.length === 1
+                    ? `${extractionLimitedDocuments[0]?.originalFileName} imported with ${extractionLimitedDocuments[0]?.extractionState === 'image-only' ? 'no extracted text' : 'limited extracted text'}. StudyBud will keep the file, but AI features may be incomplete for that document.`
+                    : `${extractionLimitedDocuments.length} imported documents have limited or missing extracted text. These are often scanned/image-only PDFs, so AI features may be incomplete for those files.`}
+                </DismissibleBanner>
+              ) : null}
+
+              {!isOnline && settings.aiProvider === 'openai' ? (
+                <DismissibleBanner dismissKey="workspace-offline-openai">
+                  You are currently offline. OpenAI-powered analysis and chat will not
+                  work until connectivity returns or you switch to a local Ollama
+                  provider in Settings.
+                </DismissibleBanner>
+              ) : null}
+
+              {!isOnline && rightRailTab === 'research' ? (
+                <DismissibleBanner dismissKey="workspace-offline-research">
+                  You are currently offline. Web research, browser loading, and
+                  external research links will be unavailable until connectivity
+                  returns.
+                </DismissibleBanner>
+              ) : null}
+
+              {settings.aiProvider === 'ollama' && !activeAnalysis ? (
+                <div className="analysis-muted">
+                  Ollama mode expects a reachable local server at{' '}
+                  <code>{settings.ollamaBaseUrl}</code> using model{' '}
+                  <code>{settings.ollamaModel}</code>.
+                </div>
+              ) : null}
+
+              {!analysisReady && !workspace.analysis ? (
                 <div className="empty-state">
                   {settings.aiProvider === 'ollama'
                     ? 'Set an Ollama model in Settings before running subject analysis.'
                     : 'Add your OpenAI API key in Settings before running subject analysis.'}
+                </div>
+              ) : workspace.documents.length > 0 &&
+                workspace.documents.every((document) => document.importStatus !== 'ready') ? (
+                <div className="empty-state">
+                  No import-ready documents are available yet. Re-import the PDFs or
+                  remove failed files before running analysis.
                 </div>
               ) : !workspace.analysis ? (
                 <div className="empty-state">
@@ -2608,6 +2964,16 @@ export const App = () => {
                 </div>
               ) : (
                 <div className="division-workspace">
+                  {lowConfidenceAnalysis ? (
+                    <DismissibleBanner
+                      dismissKey={`low-confidence-analysis:${workspace.subject.id}:${workspace.analysis.unassignedPages.length}:${extractionLimitedDocuments.length}`}
+                    >
+                      {workspace.analysis.unassignedPages.length > 0
+                        ? `The latest analysis left ${workspace.analysis.unassignedPages.length} page${workspace.analysis.unassignedPages.length === 1 ? '' : 's'} unassigned, so some division coverage may still be incomplete.`
+                        : 'Some imported documents had limited extracted text, so the latest analysis may be less complete than usual.'}
+                    </DismissibleBanner>
+                  ) : null}
+
                   <article className="analysis-division-card division-focus-card">
                     <div className="analysis-division-header">
                       <div>
@@ -2688,6 +3054,12 @@ export const App = () => {
                     canGenerate={!practiceBusy && !busy && practiceGenerationReady}
                     generateBusy={practiceBusy}
                     chatBusy={chatBusy}
+                    aiActionsEnabled={analysisReady}
+                    disabledReason={!analysisReady ? aiActionBlockedReason : null}
+                    errorMessage={practiceError}
+                    onRetryGenerate={
+                      lastPracticeRequest ? () => void handleRetryPractice() : null
+                    }
                   />
 
                   {selectedCitation ? (
@@ -2775,76 +3147,126 @@ export const App = () => {
               )}
             </section>
 
-            {!documentDetail ? (
-              <div className="empty-state">
-                Select a document to inspect its pages and extracted text.
-              </div>
-            ) : documentDetail.importStatus !== 'ready' ? (
-              <div className="empty-state">
-                {documentDetail.errorMessage ??
-                  'This document did not import successfully.'}
-              </div>
-            ) : (
-              <>
-                <div className="document-inspector-header">
-                  <div>
-                    <h3>{documentDetail.originalFileName}</h3>
-                    <p>
-                      {documentDetail.kind} • {documentDetail.pageCount} pages •
-                      imported {formatDate(documentDetail.updatedAt)}
-                    </p>
-                  </div>
-                  <span className="pill pill-ready">ready</span>
+            <section ref={pdfViewerSectionRef} className="document-viewer-section">
+              {!documentDetail ? (
+                <div className="empty-state">
+                  Select a document to inspect its pages and extracted text.
                 </div>
-
-                <Suspense fallback={<div className="empty-state">Loading PDF viewer...</div>}>
-                  <PdfViewer
-                    documentBytes={documentBytes}
-                    pages={documentDetail.pages}
-                    selectedPageNumber={selectedPageNumber}
-                    onSelectPage={setSelectedPageNumber}
-                    focusText={
-                      selectedCitation &&
-                      selectedCitation.documentId === documentDetail.id &&
-                      selectedCitation.pageNumber === selectedPageNumber
-                        ? selectedCitation.highlightText
-                        : null
-                    }
-                  />
-                </Suspense>
-
-                <section className="page-text-panel">
-                  <div className="sidebar-section-title">
-                    <h3>Extracted Page Text</h3>
-                    <span>{documentDetail.pages.length}</span>
+              ) : documentDetail.importStatus !== 'ready' ? (
+                <div className="empty-state">
+                  {documentDetail.errorMessage ??
+                    'This document did not import successfully.'}
+                </div>
+              ) : (
+                <>
+                  <div className="document-inspector-header">
+                    <div>
+                      <h3>{documentDetail.originalFileName}</h3>
+                      <p>
+                        {documentDetail.kind} • {documentDetail.pageCount} pages •
+                        {documentDetail.pagesWithExtractedText}/{documentDetail.pageCount} with text •
+                        imported {formatDate(documentDetail.updatedAt)}
+                      </p>
+                    </div>
+                    <div className="analysis-chip-list">
+                      <span className="pill pill-ready">ready</span>
+                      <span className={`pill pill-${documentDetail.kind}`}>
+                        {documentDetail.kind}
+                      </span>
+                      {documentDetail.extractionState !== 'normal' ? (
+                        <span
+                          className={`pill pill-${
+                            documentDetail.extractionState === 'image-only'
+                              ? 'image-only'
+                              : 'limited'
+                          }`}
+                        >
+                          {documentDetail.extractionState === 'image-only'
+                            ? 'image-only'
+                            : 'limited text'}
+                        </span>
+                      ) : null}
+                    </div>
                   </div>
 
-                  <div className="page-text-list">
-                    {documentDetail.pages.map((page) => (
-                      <button
-                        key={page.id}
-                        type="button"
-                        className={`page-text-card${selectedPageNumber === page.pageNumber ? ' active' : ''}`}
-                        onClick={() => setSelectedPageNumber(page.pageNumber)}
-                      >
-                        <strong>Page {page.pageNumber}</strong>
-                        <p onMouseUp={() => handlePageTextSelection(page)}>
-                          {page.pageNumber === selectedPageNumber &&
-                          selectedCitation &&
-                          selectedCitation.documentId === documentDetail.id &&
-                          selectedCitation.pageNumber === page.pageNumber
-                            ? renderHighlightedText(
-                                focusedPageSnippet || page.previewText || 'No text extracted on this page.',
-                                selectedCitation.highlightText,
-                              )
-                            : page.previewText || 'No text extracted on this page.'}
-                        </p>
-                      </button>
-                    ))}
-                  </div>
-                </section>
-              </>
-            )}
+                  {getExtractionWarningMessage(documentDetail.extractionState) ? (
+                    <DismissibleBanner
+                      dismissKey={`document-extraction-warning:${documentDetail.id}:${documentDetail.extractionState}`}
+                    >
+                      {getExtractionWarningMessage(documentDetail.extractionState)}
+                    </DismissibleBanner>
+                  ) : null}
+
+                  <Suspense fallback={<div className="empty-state">Loading PDF viewer...</div>}>
+                    <PdfViewer
+                      documentBytes={documentBytes}
+                      pages={documentDetail.pages}
+                      selectedPageNumber={selectedPageNumber}
+                      onSelectPage={setSelectedPageNumber}
+                      focusText={
+                        selectedCitation &&
+                        selectedCitation.documentId === documentDetail.id &&
+                        selectedCitation.pageNumber === selectedPageNumber
+                          ? selectedCitation.highlightText
+                          : null
+                      }
+                    />
+                  </Suspense>
+
+                  <section className="page-text-panel">
+                    <div className="sidebar-section-title">
+                      <h3>Extracted Page Text</h3>
+                      <div className="page-text-panel-actions">
+                        <span>{documentDetail.pages.length}</span>
+                        <button
+                          type="button"
+                          className="page-text-toggle"
+                          onClick={() => setIsPageTextExpanded((current) => !current)}
+                          aria-expanded={isPageTextExpanded}
+                        >
+                          <span className="page-text-toggle-arrow" aria-hidden="true">
+                            {isPageTextExpanded ? '▾' : '▸'}
+                          </span>
+                          {isPageTextExpanded ? 'Hide pages' : 'Show pages'}
+                        </button>
+                      </div>
+                    </div>
+
+                    {isPageTextExpanded ? (
+                      <div className="page-text-list">
+                        {documentDetail.pages.map((page) => (
+                          <button
+                            key={page.id}
+                            type="button"
+                            className={`page-text-card${selectedPageNumber === page.pageNumber ? ' active' : ''}`}
+                            onClick={() => setSelectedPageNumber(page.pageNumber)}
+                          >
+                            <strong>Page {page.pageNumber}</strong>
+                            <p onMouseUp={() => handlePageTextSelection(page)}>
+                              {page.pageNumber === selectedPageNumber &&
+                              selectedCitation &&
+                              selectedCitation.documentId === documentDetail.id &&
+                              selectedCitation.pageNumber === page.pageNumber
+                                ? renderHighlightedText(
+                                    focusedPageSnippet ||
+                                      page.previewText ||
+                                      'No text extracted on this page.',
+                                    selectedCitation.highlightText,
+                                  )
+                                : page.previewText || 'No text extracted on this page.'}
+                            </p>
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="empty-state page-text-collapsed-state">
+                        Expand this section to inspect the extracted text preview for each page.
+                      </div>
+                    )}
+                  </section>
+                </>
+              )}
+            </section>
           </section>
 
           <div
@@ -2884,6 +3306,10 @@ export const App = () => {
                 onChatInputChange={setChatInput}
                 onSubmit={() => void handleAskChat()}
                 chatBusy={chatBusy}
+                aiActionsEnabled={analysisReady}
+                disabledReason={!analysisReady ? aiActionBlockedReason : null}
+                errorMessage={chatError}
+                onRetry={lastChatRequest ? () => void handleRetryChat() : null}
                 pendingPrompt={pendingChatPrompt}
                 onUseFollowup={(value) => {
                   void submitChatPrompt(value, null);
@@ -2902,6 +3328,9 @@ export const App = () => {
                 videoQuery={researchVideoQueryInput}
                 onVideoQueryChange={setResearchVideoQueryInput}
                 onSearch={() => void handleSearchResearch()}
+                onRetrySearch={
+                  lastResearchRequest ? () => void handleRetryResearch() : null
+                }
                 searchBusy={researchBusy}
                 searchError={researchError}
                 searchResult={researchResult}
@@ -2986,7 +3415,11 @@ export const App = () => {
       ) : null}
 
       <section className="content">
-        {error ? <div className="error-banner">{error}</div> : null}
+        {error ? (
+          <DismissibleBanner variant="error" dismissKey={`app-error:${error}`}>
+            {error}
+          </DismissibleBanner>
+        ) : null}
 
         {selectionDraft && selectionPopupPosition && selectionUiMode === 'chip' ? (
           <SelectionAskChip
@@ -3002,6 +3435,8 @@ export const App = () => {
             position={selectionPopupPosition}
             question={selectionQuestionInput}
             busy={chatBusy}
+            aiActionsEnabled={analysisReady}
+            disabledReason={!analysisReady ? aiActionBlockedReason : null}
             onQuestionChange={setSelectionQuestionInput}
             onSubmit={() => void handleAskSelectionQuestion()}
             onCancel={closeSelectionPopup}

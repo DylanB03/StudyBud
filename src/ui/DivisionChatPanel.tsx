@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import type { CitationRef, DivisionChatMessage } from '../shared/ipc';
 import { CitationPreviewCard } from './CitationPreviewCard';
+import { DismissibleBanner } from './DismissibleBanner';
 import { RichMessageContent } from './RichMessageContent';
 
 const getCitationKey = (citation: CitationRef): string => {
@@ -14,7 +15,11 @@ type DivisionChatPanelProps = {
   onChatInputChange: (value: string) => void;
   onSubmit: () => void;
   chatBusy: boolean;
+  errorMessage?: string | null;
+  onRetry?: (() => void) | null;
   pendingPrompt: string | null;
+  aiActionsEnabled?: boolean;
+  disabledReason?: string | null;
   onUseFollowup: (value: string) => void;
   onOpenCitation: (citation: CitationRef) => void;
   onSelectCitationText: (citation: CitationRef) => void;
@@ -29,7 +34,11 @@ export const DivisionChatPanel = ({
   onChatInputChange,
   onSubmit,
   chatBusy,
+  errorMessage = null,
+  onRetry = null,
   pendingPrompt,
+  aiActionsEnabled = true,
+  disabledReason = null,
   onUseFollowup,
   onOpenCitation,
   onSelectCitationText,
@@ -85,6 +94,31 @@ export const DivisionChatPanel = ({
         <h3>Division Chat</h3>
         <span>{messages.length}</span>
       </div>
+
+      {errorMessage ? (
+        <DismissibleBanner
+          dismissKey={`chat-error:${errorMessage}`}
+          className="panel-banner"
+          action={
+            onRetry ? (
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={onRetry}
+                disabled={chatBusy}
+              >
+                Retry
+              </button>
+            ) : null
+          }
+        >
+          <span>{errorMessage}</span>
+        </DismissibleBanner>
+      ) : null}
+
+      {!aiActionsEnabled && disabledReason ? (
+        <div className="warning-banner">{disabledReason}</div>
+      ) : null}
 
       <div className="chat-message-list">
         {messages.length === 0 ? (
@@ -158,7 +192,7 @@ export const DivisionChatPanel = ({
                       type="button"
                       className="ghost-button chat-followup-button"
                       onClick={() => onUseFollowup(followup)}
-                      disabled={chatBusy}
+                      disabled={chatBusy || !aiActionsEnabled}
                     >
                       <RichMessageContent content={followup} compact />
                     </button>
@@ -201,12 +235,12 @@ export const DivisionChatPanel = ({
           onChange={(event) => onChatInputChange(event.target.value)}
           placeholder="Ask a question about this division..."
           rows={4}
-          disabled={chatBusy}
+          disabled={chatBusy || !aiActionsEnabled}
         />
         <div className="chat-composer-actions">
           <button
             type="button"
-            disabled={chatBusy || !chatInput.trim()}
+            disabled={chatBusy || !chatInput.trim() || !aiActionsEnabled}
             onClick={onSubmit}
           >
             Ask Division Chat

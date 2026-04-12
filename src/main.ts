@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import { randomUUID } from 'node:crypto';
+import os from 'node:os';
 import path from 'node:path';
 
 import {
@@ -32,6 +33,7 @@ import {
   type SourceDocumentRow,
   type SubjectRow,
 } from './main/db/database';
+import { summarizeExtractionConfidence } from './main/documents/extraction-confidence';
 import { runImportInUtilityProcess } from './main/documents/import-process';
 import { ResearchBrowserController } from './main/research/browser';
 import { searchResearch } from './main/research/search';
@@ -203,6 +205,15 @@ let sessionBraveSearchApiKey: string | null = null;
 let sessionYouTubeApiKey: string | null = null;
 let researchBrowser: ResearchBrowserController | null = null;
 
+const isRunningInWsl = (): boolean => {
+  if (process.platform !== 'linux') {
+    return false;
+  }
+
+  const release = os.release().toLowerCase();
+  return release.includes('microsoft') || release.includes('wsl');
+};
+
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 
 if (!hasSingleInstanceLock) {
@@ -344,7 +355,15 @@ const mapSubject = (subject: SubjectRow): SubjectSummary => {
   };
 };
 
-const mapDocument = (document: SourceDocumentRow): SourceDocumentSummary => {
+const mapDocument = (
+  document: SourceDocumentRow,
+  pages: DocumentPageRow[] = [],
+): SourceDocumentSummary => {
+  const extractionSummary = summarizeExtractionConfidence({
+    importStatus: document.importStatus,
+    pageCount: document.pageCount,
+    pageTextLengths: pages.map((page) => page.textLength),
+  });
   return {
     id: document.id,
     subjectId: document.subjectId,
@@ -354,6 +373,9 @@ const mapDocument = (document: SourceDocumentRow): SourceDocumentSummary => {
     relativePath: document.relativePath,
     mimeType: document.mimeType,
     pageCount: document.pageCount,
+    extractedTextLength: extractionSummary.extractedTextLength,
+    pagesWithExtractedText: extractionSummary.pagesWithExtractedText,
+    extractionState: extractionSummary.extractionState,
     importStatus: document.importStatus as SourceDocumentSummary['importStatus'],
     errorMessage: document.errorMessage,
     createdAt: formatTimestamp(document.createdAt),
@@ -440,7 +462,9 @@ const getSubjectWorkspace = (subjectId: string): SubjectWorkspace => {
 
   return {
     subject: mapSubject(subject),
-    documents: db.listDocumentsBySubject(subjectId).map(mapDocument),
+    documents: db
+      .listDocumentsBySubject(subjectId)
+      .map((document) => mapDocument(document, db.getPagesByDocument(document.id))),
     jobs: db.listJobsBySubject(subjectId, 'document-import').map(mapJob),
     analysisJobs: db
       .listJobsBySubject(subjectId, 'subject-ingestion')
@@ -759,6 +783,11 @@ const registerIpcHandlers = (): void => {
       userDataPath: app.getPath('userData'),
       dataPath: paths.dataDir,
       encryptionAvailable: safeStorage.isEncryptionAvailable(),
+      platform: process.platform,
+      nodeVersion: process.versions.node,
+      electronVersion: process.versions.electron,
+      runningInWsl: isRunningInWsl(),
+      nativeDatabaseReady: Boolean(database),
     };
   });
 
@@ -895,12 +924,14 @@ const registerIpcHandlers = (): void => {
         },
       );
 
-      return {
-        canceled: false,
-        job: mapJob(result.job),
-        importedDocuments: result.importedDocuments.map(mapDocument),
-        failures: result.failures,
-      };
+        return {
+          canceled: false,
+          job: mapJob(result.job),
+          importedDocuments: result.importedDocuments.map((document) =>
+            mapDocument(document),
+          ),
+          failures: result.failures,
+        };
     },
   );
 
@@ -1146,14 +1177,15 @@ const registerIpcHandlers = (): void => {
       await ensureInitialized();
       const db = getDatabaseOrThrow();
       const document = db.getDocumentById(documentId);
+      const pages = db.getPagesByDocument(documentId);
 
       if (!document) {
         throw new Error('Document not found');
       }
 
       return {
-        ...mapDocument(document),
-        pages: db.getPagesByDocument(documentId).map(mapPage),
+        ...mapDocument(document, pages),
+        pages: pages.map(mapPage),
       };
     },
   );

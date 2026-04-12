@@ -86,4 +86,35 @@ describe('PracticePanel', () => {
     expect(markup).toContain('Based on 1 source page');
     expect(markup).toContain('Hide Answer Key');
   });
+
+  it('renders a retryable warning when practice generation fails', () => {
+    const markup = renderToStaticMarkup(
+      <PracticePanel
+        division={division}
+        practiceSets={[practiceSet]}
+        selectedProblemTypeId="problem-type-1"
+        onSelectedProblemTypeChange={vi.fn()}
+        difficulty="medium"
+        onDifficultyChange={vi.fn()}
+        count={1}
+        onCountChange={vi.fn()}
+        onGenerate={vi.fn()}
+        onRevealAnswer={vi.fn()}
+        onDeletePracticeSet={vi.fn()}
+        onRegeneratePracticeSet={vi.fn()}
+        onExplainQuestion={vi.fn()}
+        onExplainAnswer={vi.fn()}
+        onQuestionSelection={vi.fn()}
+        onAnswerSelection={vi.fn()}
+        canGenerate
+        generateBusy={false}
+        chatBusy={false}
+        errorMessage="Could not generate a practice set."
+        onRetryGenerate={vi.fn()}
+      />,
+    );
+
+    expect(markup).toContain('Could not generate a practice set.');
+    expect(markup).toContain('Retry');
+  });
 });
