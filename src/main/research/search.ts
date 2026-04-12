@@ -5,6 +5,12 @@ import type {
   ResearchWebResult,
 } from '../../shared/ipc';
 
+export type ResearchProviderConfig = {
+  braveApiKey: string | null;
+  youTubeApiKey: string | null;
+  safetyMode: 'balanced' | 'education';
+};
+
 const DEFAULT_HEADERS = {
   'user-agent':
     'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) StudyBud/1.0 Safari/537.36',
@@ -15,6 +21,28 @@ const DEFAULT_HEADERS = {
 
 const MAX_WEB_RESULTS = 6;
 const MAX_VIDEO_RESULTS = 6;
+const EDUCATIONAL_HOST_KEYWORDS = [
+  '.edu',
+  'khanacademy.org',
+  'ocw.mit.edu',
+  'openstax.org',
+  'coursera.org',
+  'edx.org',
+  'brilliant.org',
+  'physicsclassroom.com',
+  'wikipedia.org',
+  'britannica.com',
+];
+const EDUCATIONAL_VIDEO_KEYWORDS = [
+  'lecture',
+  'tutorial',
+  'course',
+  'lesson',
+  'education',
+  'explained',
+  'university',
+  'academy',
+];
 
 const COMMON_ENTITIES: Record<string, string> = {
   '&amp;': '&',
@@ -70,6 +98,24 @@ const toDisplayUrl = (value: string): string => {
   } catch {
     return value;
   }
+};
+
+const isEducationalUrl = (value: string): boolean => {
+  try {
+    const url = new URL(value);
+    return EDUCATIONAL_HOST_KEYWORDS.some((keyword) =>
+      url.hostname.toLowerCase().includes(keyword),
+    );
+  } catch {
+    return false;
+  }
+};
+
+const educationScoreText = (value: string): number => {
+  const lowered = value.toLowerCase();
+  return EDUCATIONAL_VIDEO_KEYWORDS.reduce((score, keyword) => {
+    return lowered.includes(keyword) ? score + 1 : score;
+  }, 0);
 };
 
 const parseDuckDuckGoResults = (html: string): ResearchWebResult[] => {
@@ -331,8 +377,175 @@ const fetchText = async (url: string): Promise<string> => {
   return response.text();
 };
 
+const fetchJson = async <T>(
+  url: string,
+  headers: Record<string, string>,
+): Promise<T> => {
+  const response = await fetch(url, {
+    headers,
+  });
+
+  if (!response.ok) {
+    throw new Error(`Request failed with status ${response.status}`);
+  }
+
+  return (await response.json()) as T;
+};
+
+const searchBraveWeb = async (
+  query: string,
+  apiKey: string,
+): Promise<ResearchWebResult[]> => {
+  const url = new URL('https://api.search.brave.com/res/v1/web/search');
+  url.searchParams.set('q', query);
+  url.searchParams.set('count', String(MAX_WEB_RESULTS));
+  url.searchParams.set('country', 'us');
+  url.searchParams.set('search_lang', 'en');
+
+  const payload = await fetchJson<{
+    web?: {
+      results?: Array<{
+        url?: string;
+        title?: string;
+        description?: string;
+        profile?: {
+          long_name?: string;
+        };
+      }>;
+    };
+  }>(url.toString(), {
+    Accept: 'application/json',
+    'X-Subscription-Token': apiKey,
+  });
+
+  const results = payload.web?.results ?? [];
+
+  return results
+    .map((entry, index) => {
+      const resultUrl = entry.url?.trim() ?? '';
+      const title = entry.title?.trim() ?? '';
+
+      if (!resultUrl || !title) {
+        return null;
+      }
+
+      return {
+        id: `web:${index}:${resultUrl}`,
+        title,
+        url: resultUrl,
+        displayUrl: toDisplayUrl(resultUrl),
+        snippet: entry.description?.trim() ?? '',
+        source: entry.profile?.long_name?.trim() || 'Brave Search',
+      } satisfies ResearchWebResult;
+    })
+    .filter((entry): entry is ResearchWebResult => Boolean(entry));
+};
+
+const searchYouTubeVideosApi = async (
+  query: string,
+  apiKey: string,
+): Promise<ResearchVideoResult[]> => {
+  const url = new URL('https://www.googleapis.com/youtube/v3/search');
+  url.searchParams.set('part', 'snippet');
+  url.searchParams.set('type', 'video');
+  url.searchParams.set('maxResults', String(MAX_VIDEO_RESULTS));
+  url.searchParams.set('videoEmbeddable', 'true');
+  url.searchParams.set('safeSearch', 'moderate');
+  url.searchParams.set('q', query);
+  url.searchParams.set('key', apiKey);
+
+  const payload = await fetchJson<{
+    items?: Array<{
+      id?: {
+        videoId?: string;
+      };
+      snippet?: {
+        title?: string;
+        channelTitle?: string;
+        thumbnails?: {
+          high?: { url?: string };
+          medium?: { url?: string };
+          default?: { url?: string };
+        };
+      };
+    }>;
+  }>(url.toString(), {
+    Accept: 'application/json',
+  });
+
+  return (payload.items ?? [])
+    .map<ResearchVideoResult | null>((item) => {
+      const videoId = item.id?.videoId?.trim() ?? '';
+      const title = item.snippet?.title?.trim() ?? '';
+
+      if (!videoId || !title) {
+        return null;
+      }
+
+      return {
+        id: `video:${videoId}`,
+        title,
+        url: `https://www.youtube.com/watch?v=${videoId}`,
+        thumbnailUrl:
+          item.snippet?.thumbnails?.high?.url ??
+          item.snippet?.thumbnails?.medium?.url ??
+          item.snippet?.thumbnails?.default?.url ??
+          `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+        channel: item.snippet?.channelTitle?.trim() ?? null,
+        duration: null,
+        query,
+      };
+    })
+    .filter((item): item is ResearchVideoResult => Boolean(item));
+};
+
+const applySafetyModeToWebResults = (
+  results: ResearchWebResult[],
+  safetyMode: 'balanced' | 'education',
+): ResearchWebResult[] => {
+  if (safetyMode === 'balanced') {
+    return results.slice(0, MAX_WEB_RESULTS);
+  }
+
+  return [...results]
+    .sort((left, right) => {
+      const leftScore =
+        (isEducationalUrl(left.url) ? 3 : 0) +
+        educationScoreText(`${left.title} ${left.snippet}`);
+      const rightScore =
+        (isEducationalUrl(right.url) ? 3 : 0) +
+        educationScoreText(`${right.title} ${right.snippet}`);
+
+      return rightScore - leftScore;
+    })
+    .slice(0, MAX_WEB_RESULTS);
+};
+
+const applySafetyModeToVideos = (
+  results: ResearchVideoResult[],
+  safetyMode: 'balanced' | 'education',
+): ResearchVideoResult[] => {
+  if (safetyMode === 'balanced') {
+    return results.slice(0, MAX_VIDEO_RESULTS);
+  }
+
+  return [...results]
+    .sort((left, right) => {
+      const leftScore = educationScoreText(
+        `${left.title} ${left.channel ?? ''} ${left.query}`,
+      );
+      const rightScore = educationScoreText(
+        `${right.title} ${right.channel ?? ''} ${right.query}`,
+      );
+
+      return rightScore - leftScore;
+    })
+    .slice(0, MAX_VIDEO_RESULTS);
+};
+
 export const searchResearch = async (
   input: ResearchSearchInput,
+  config: ResearchProviderConfig,
 ): Promise<ResearchSearchResult> => {
   const query = input.query.trim();
   const videoQuery = input.videoQuery?.trim() || query;
@@ -341,12 +554,16 @@ export const searchResearch = async (
     throw new Error('Enter a search query to start research.');
   }
 
-  const webPromise = fetchText(
-    `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`,
-  );
-  const videoPromise = fetchText(
-    `https://www.youtube.com/results?search_query=${encodeURIComponent(videoQuery)}`,
-  );
+  const webPromise = config.braveApiKey
+    ? searchBraveWeb(query, config.braveApiKey)
+    : fetchText(
+        `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`,
+      ).then(parseDuckDuckGoResults);
+  const videoPromise = config.youTubeApiKey
+    ? searchYouTubeVideosApi(videoQuery, config.youTubeApiKey)
+    : fetchText(
+        `https://www.youtube.com/results?search_query=${encodeURIComponent(videoQuery)}`,
+      ).then((html) => parseYouTubeVideos(html, videoQuery));
 
   const [webSettled, videoSettled] = await Promise.allSettled([
     webPromise,
@@ -355,11 +572,11 @@ export const searchResearch = async (
 
   const webResults =
     webSettled.status === 'fulfilled'
-      ? parseDuckDuckGoResults(webSettled.value)
+      ? applySafetyModeToWebResults(webSettled.value, config.safetyMode)
       : [];
   const videos =
     videoSettled.status === 'fulfilled'
-      ? parseYouTubeVideos(videoSettled.value, videoQuery)
+      ? applySafetyModeToVideos(videoSettled.value, config.safetyMode)
       : [];
 
   if (webResults.length === 0 && videos.length === 0) {
@@ -373,10 +590,17 @@ export const searchResearch = async (
     videoQuery,
     results: webResults,
     videos,
+    provider: [
+      config.braveApiKey ? 'Brave Search API' : 'DuckDuckGo fallback',
+      config.youTubeApiKey ? 'YouTube Data API' : 'YouTube fallback',
+    ].join(' + '),
+    safetyMode: config.safetyMode,
   };
 };
 
 export const __testables__ = {
+  applySafetyModeToVideos,
+  applySafetyModeToWebResults,
   parseDuckDuckGoResults,
   parseYouTubeVideos,
 };

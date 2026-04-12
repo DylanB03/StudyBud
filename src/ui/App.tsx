@@ -64,6 +64,9 @@ const initialSettings: SettingsState = {
   encryptionAvailable: false,
   ollamaBaseUrl: 'http://localhost:11434',
   ollamaModel: 'qwen3:8b',
+  braveSearchApiKeyConfigured: false,
+  youTubeApiKeyConfigured: false,
+  researchSafetyMode: 'balanced',
   dataPath: '',
   defaultDataPath: '',
   usingCustomDataPath: false,
@@ -178,6 +181,9 @@ const initialResearchBrowserState: ResearchBrowserState = {
   canGoBack: false,
   canGoForward: false,
   loading: false,
+  sourceUrl: '',
+  errorMessage: null,
+  contentKind: 'web',
 };
 
 const hasMeaningfulSelection = (): boolean => {
@@ -208,6 +214,11 @@ export const App = () => {
     'http://localhost:11434',
   );
   const [ollamaModelInput, setOllamaModelInput] = useState('qwen3:8b');
+  const [braveSearchApiKeyInput, setBraveSearchApiKeyInput] = useState('');
+  const [youTubeApiKeyInput, setYouTubeApiKeyInput] = useState('');
+  const [researchSafetyModeInput, setResearchSafetyModeInput] = useState<
+    'balanced' | 'education'
+  >('balanced');
   const [activeAnalysis, setActiveAnalysis] = useState<ActiveAnalysisState | null>(
     null,
   );
@@ -320,7 +331,13 @@ export const App = () => {
     setAiProviderInput(settings.aiProvider);
     setOllamaBaseUrlInput(settings.ollamaBaseUrl);
     setOllamaModelInput(settings.ollamaModel);
-  }, [settings.aiProvider, settings.ollamaBaseUrl, settings.ollamaModel]);
+    setResearchSafetyModeInput(settings.researchSafetyMode);
+  }, [
+    settings.aiProvider,
+    settings.ollamaBaseUrl,
+    settings.ollamaModel,
+    settings.researchSafetyMode,
+  ]);
 
   useEffect(() => {
     if (!activeAnalysis) {
@@ -1240,6 +1257,66 @@ export const App = () => {
     }
   };
 
+  const handleSaveResearchSettings = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!studybud) {
+      return;
+    }
+
+    setBusy(true);
+    setError(null);
+
+    try {
+      const nextSettings = await studybud.saveSettings({
+        ...(braveSearchApiKeyInput.trim().length > 0
+          ? { braveSearchApiKey: braveSearchApiKeyInput }
+          : {}),
+        ...(youTubeApiKeyInput.trim().length > 0
+          ? { youTubeApiKey: youTubeApiKeyInput }
+          : {}),
+        researchSafetyMode: researchSafetyModeInput,
+      });
+      setSettings(nextSettings);
+      setBraveSearchApiKeyInput('');
+      setYouTubeApiKeyInput('');
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : 'Could not save research settings.',
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleClearResearchKeys = async () => {
+    if (!studybud) {
+      return;
+    }
+
+    setBusy(true);
+    setError(null);
+
+    try {
+      const nextSettings = await studybud.saveSettings({
+        braveSearchApiKey: '',
+        youTubeApiKey: '',
+      });
+      setSettings(nextSettings);
+      setBraveSearchApiKeyInput('');
+      setYouTubeApiKeyInput('');
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : 'Could not clear research API keys.',
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleChooseDataPath = async () => {
     if (!studybud) {
       return;
@@ -1757,8 +1834,32 @@ export const App = () => {
     setResearchError(null);
     setRightRailTab('research');
 
+    const scrollResearchViewerIntoView = () => {
+      const panel = researchPanelRef.current;
+      const host = researchBrowserHostRef.current;
+
+      if (!panel || !host) {
+        return;
+      }
+
+      const nextTop = Math.max(
+        0,
+        host.offsetTop - panel.offsetTop - 12,
+      );
+
+      panel.scrollTo({
+        top: nextTop,
+        behavior: 'smooth',
+      });
+    };
+
+    scrollResearchViewerIntoView();
+
     try {
       await studybud.navigateResearchBrowser({ url });
+      requestAnimationFrame(() => {
+        scrollResearchViewerIntoView();
+      });
     } catch (caughtError) {
       setResearchError(
         caughtError instanceof Error
@@ -1834,6 +1935,49 @@ export const App = () => {
           : 'Could not reload the research browser.',
       );
     }
+  };
+
+  const handleOpenResearchVideoResult = async (url: string) => {
+    if (!studybud) {
+      return;
+    }
+
+    try {
+      await studybud.openExternalResearchLink({ url });
+    } catch (caughtError) {
+      setResearchError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : 'Could not open the video in your default browser.',
+      );
+    }
+  };
+
+  const handleOpenResearchWebResultExternally = async (url: string) => {
+    if (!studybud) {
+      return;
+    }
+
+    try {
+      await studybud.openExternalResearchLink({ url });
+    } catch (caughtError) {
+      setResearchError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : 'Could not open this source in your default browser.',
+      );
+    }
+  };
+
+  const handleOpenCurrentResearchBrowserExternally = async () => {
+    const url =
+      researchBrowserState.sourceUrl.trim() || researchBrowserUrlInput.trim();
+
+    if (!url) {
+      return;
+    }
+
+    await handleOpenResearchWebResultExternally(url);
   };
 
   const closeSelectionPopup = () => {
@@ -2054,6 +2198,109 @@ export const App = () => {
                 onClick={handleClearApiKey}
               >
                 Clear Stored Key
+              </button>
+            </div>
+          </form>
+        </section>
+
+        <section className="settings-card">
+          <header className="settings-card-header">
+            <h3>Research Settings</h3>
+            <p>
+              Add optional Brave Search and YouTube Data API keys for more stable
+              research results. If keys are missing, StudyBud falls back to built-in
+              search scraping.
+            </p>
+          </header>
+
+          <div className="info-grid">
+            <div>
+              <span className="label">Web Provider</span>
+              <strong>
+                {settings.braveSearchApiKeyConfigured
+                  ? 'Brave Search API'
+                  : 'Fallback web scraping'}
+              </strong>
+            </div>
+            <div>
+              <span className="label">Video Provider</span>
+              <strong>
+                {settings.youTubeApiKeyConfigured
+                  ? 'YouTube Data API'
+                  : 'Fallback video scraping'}
+              </strong>
+            </div>
+            <div>
+              <span className="label">Safety Mode</span>
+              <strong>{settings.researchSafetyMode}</strong>
+            </div>
+          </div>
+
+          {!settings.encryptionAvailable ? (
+            <div className="warning-banner">
+              This device does not currently expose secure OS key storage, so research
+              API keys will be kept in memory only for this app session.
+            </div>
+          ) : null}
+
+          <form className="stack-form" onSubmit={handleSaveResearchSettings}>
+            <label htmlFor="research-safety-mode">Research Safety Mode</label>
+            <select
+              id="research-safety-mode"
+              value={researchSafetyModeInput}
+              onChange={(event) =>
+                setResearchSafetyModeInput(
+                  event.target.value as 'balanced' | 'education',
+                )
+              }
+              disabled={busy}
+            >
+              <option value="balanced">Balanced</option>
+              <option value="education">Education Focused</option>
+            </select>
+
+            <div className="hint-text">
+              Education mode prioritizes educational domains and learning-oriented
+              results when StudyBud ranks research sources.
+            </div>
+
+            <label htmlFor="brave-search-api-key">Brave Search API Key</label>
+            <input
+              id="brave-search-api-key"
+              type="password"
+              value={braveSearchApiKeyInput}
+              onChange={(event) => setBraveSearchApiKeyInput(event.target.value)}
+              placeholder="BSA..."
+              autoComplete="off"
+              disabled={busy}
+            />
+
+            <label htmlFor="youtube-api-key">YouTube Data API Key</label>
+            <input
+              id="youtube-api-key"
+              type="password"
+              value={youTubeApiKeyInput}
+              onChange={(event) => setYouTubeApiKeyInput(event.target.value)}
+              placeholder="AIza..."
+              autoComplete="off"
+              disabled={busy}
+            />
+
+            <div className="form-actions">
+              <button type="submit" disabled={busy}>
+                Save Research Settings
+              </button>
+              <button
+                type="button"
+                className="ghost-button"
+                disabled={
+                  busy ||
+                  (!settings.braveSearchApiKeyConfigured &&
+                    !settings.youTubeApiKeyConfigured)
+                }
+                onClick={handleClearResearchKeys}
+              >
+                Clear Stored Research Keys
               </button>
             </div>
           </form>
@@ -2664,6 +2911,10 @@ export const App = () => {
                 suggestedVideoQueries={
                   latestAssistantMessage?.suggestedVideoQueries ?? []
                 }
+                suggestionSourceContent={latestAssistantMessage?.content ?? null}
+                suggestionSourceCreatedAt={
+                  latestAssistantMessage?.createdAt ?? null
+                }
                 onUseSuggestedSearch={(query) => {
                   void handleSearchResearch(query, researchVideoQueryInput);
                 }}
@@ -2674,8 +2925,11 @@ export const App = () => {
                 onOpenWebResult={(result) => {
                   void handleOpenResearchWebResult(result.url);
                 }}
+                onOpenWebResultExternally={(result) => {
+                  void handleOpenResearchWebResultExternally(result.url);
+                }}
                 onOpenVideoResult={(result) => {
-                  window.open(result.url, '_blank', 'noopener,noreferrer');
+                  void handleOpenResearchVideoResult(result.url);
                 }}
                 browserState={researchBrowserState}
                 browserUrlInput={researchBrowserUrlInput}
@@ -2685,6 +2939,9 @@ export const App = () => {
                 onForwardBrowser={() => void handleResearchBrowserForward()}
                 onReloadBrowser={() => void handleResearchBrowserReload()}
                 onHideBrowser={() => void handleHideResearchBrowser()}
+                onOpenBrowserExternally={() =>
+                  void handleOpenCurrentResearchBrowserExternally()
+                }
                 browserHostRef={researchBrowserHostRef}
               />
             )}

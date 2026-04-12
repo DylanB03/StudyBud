@@ -9,7 +9,6 @@ import {
   ipcMain,
   safeStorage,
   session,
-  shell,
 } from 'electron';
 import started from 'electron-squirrel-startup';
 import { z } from 'zod';
@@ -37,6 +36,7 @@ import { runImportInUtilityProcess } from './main/documents/import-process';
 import { ResearchBrowserController } from './main/research/browser';
 import { searchResearch } from './main/research/search';
 import { applyContentSecurityPolicy } from './main/security/csp';
+import { openExternalUrl } from './main/system/open-external';
 import {
   type ChatAskInput,
   type ChatAskResult,
@@ -54,6 +54,7 @@ import {
   type ImportDocumentsResult,
   type ImportJobSummary,
   type ResearchBrowserBoundsInput,
+  type ResearchExternalLinkInput,
   type ResearchBrowserNavigationInput,
   type ResearchBrowserState,
   type ResearchSearchInput,
@@ -88,6 +89,9 @@ const OPENAI_KEY_SETTING = 'openai_api_key';
 const AI_PROVIDER_SETTING = 'ai_provider';
 const OLLAMA_BASE_URL_SETTING = 'ollama_base_url';
 const OLLAMA_MODEL_SETTING = 'ollama_model';
+const BRAVE_SEARCH_API_KEY_SETTING = 'brave_search_api_key';
+const YOUTUBE_API_KEY_SETTING = 'youtube_api_key';
+const RESEARCH_SAFETY_MODE_SETTING = 'research_safety_mode';
 const BOOTSTRAP_CONFIG_FILE = 'bootstrap-settings.json';
 
 type AppPaths = {
@@ -106,6 +110,9 @@ const saveSettingsSchema = z.object({
   openAiApiKey: z.string().max(500).optional(),
   ollamaBaseUrl: z.string().max(500).optional(),
   ollamaModel: z.string().max(200).optional(),
+  braveSearchApiKey: z.string().max(500).optional(),
+  youTubeApiKey: z.string().max(500).optional(),
+  researchSafetyMode: z.enum(['balanced', 'education']).optional(),
 });
 
 const createSubjectSchema = z.object({
@@ -182,12 +189,18 @@ const researchBrowserBoundsSchema = z.object({
   visible: z.boolean(),
 });
 
+const researchExternalLinkSchema = z.object({
+  url: z.string().trim().min(1).max(2000),
+});
+
 let appPaths: AppPaths | null = null;
 let database: DatabaseService | null = null;
 let mainWindow: BrowserWindow | null = null;
 let contentSecurityPolicyRegistered = false;
 let initializationPromise: Promise<void> | null = null;
 let sessionOpenAiApiKey: string | null = null;
+let sessionBraveSearchApiKey: string | null = null;
+let sessionYouTubeApiKey: string | null = null;
 let researchBrowser: ResearchBrowserController | null = null;
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
@@ -461,10 +474,73 @@ const getDocumentAbsolutePath = (documentId: string): string => {
   return path.join(paths.dataDir, document.relativePath);
 };
 
+const getConfiguredSecret = (
+  settingName: string,
+  sessionValue: string | null,
+): string | null => {
+  if (sessionValue && sessionValue.trim().length > 0) {
+    return sessionValue.trim();
+  }
+
+  const db = getDatabaseOrThrow();
+  const raw = db.getSetting(settingName);
+
+  if (!raw) {
+    return null;
+  }
+
+  if (!raw.encrypted) {
+    db.deleteSetting(settingName);
+    return null;
+  }
+
+  if (!safeStorage.isEncryptionAvailable()) {
+    return null;
+  }
+
+  try {
+    const decrypted = safeStorage
+      .decryptString(Buffer.from(raw.value, 'base64'))
+      .trim();
+
+    return decrypted.length > 0 ? decrypted : null;
+  } catch {
+    return null;
+  }
+};
+
+const upsertSecretSetting = (
+  settingName: string,
+  nextValue: string | undefined,
+  setSessionValue: (value: string | null) => void,
+) => {
+  if (typeof nextValue === 'undefined') {
+    return;
+  }
+
+  const db = getDatabaseOrThrow();
+  const trimmedValue = nextValue.trim();
+
+  if (trimmedValue.length === 0) {
+    setSessionValue(null);
+    db.deleteSetting(settingName);
+    return;
+  }
+
+  if (!safeStorage.isEncryptionAvailable()) {
+    setSessionValue(trimmedValue);
+    db.deleteSetting(settingName);
+    return;
+  }
+
+  setSessionValue(null);
+  const encrypted = safeStorage.encryptString(trimmedValue).toString('base64');
+  db.upsertSetting(settingName, encrypted, true);
+};
+
 const getSettingsState = (): SettingsState => {
   const db = getDatabaseOrThrow();
   const paths = getPathsOrThrow();
-  const raw = db.getSetting(OPENAI_KEY_SETTING);
   const providerRaw = db.getSetting(AI_PROVIDER_SETTING)?.value;
   const aiProvider: AiProvider =
     providerRaw === 'ollama' ? 'ollama' : 'openai';
@@ -474,83 +550,48 @@ const getSettingsState = (): SettingsState => {
   const ollamaModel =
     db.getSetting(OLLAMA_MODEL_SETTING)?.value.trim() ||
     DEFAULT_OLLAMA_INGESTION_MODEL;
+  const researchSafetyMode =
+    db.getSetting(RESEARCH_SAFETY_MODE_SETTING)?.value === 'education'
+      ? 'education'
+      : 'balanced';
   const encryptionAvailable = safeStorage.isEncryptionAvailable();
 
-  if (!raw) {
-    return {
-      aiProvider,
-      openAiApiKeyConfigured: Boolean(sessionOpenAiApiKey?.trim().length),
-      encryptionAvailable,
-      ollamaBaseUrl,
-      ollamaModel,
-      dataPath: paths.dataDir,
-      defaultDataPath: paths.defaultDataDir,
-      usingCustomDataPath: paths.dataDir !== paths.defaultDataDir,
-    };
-  }
-
-  if (!raw.encrypted) {
-    db.deleteSetting(OPENAI_KEY_SETTING);
-    return {
-      aiProvider,
-      openAiApiKeyConfigured: Boolean(sessionOpenAiApiKey?.trim().length),
-      encryptionAvailable,
-      ollamaBaseUrl,
-      ollamaModel,
-      dataPath: paths.dataDir,
-      defaultDataPath: paths.defaultDataDir,
-      usingCustomDataPath: paths.dataDir !== paths.defaultDataDir,
-    };
-  }
-
-  try {
-    const encryptedBuffer = Buffer.from(raw.value, 'base64');
-    const decrypted = safeStorage.decryptString(encryptedBuffer);
-    return {
-      aiProvider,
-      openAiApiKeyConfigured: decrypted.trim().length > 0,
-      encryptionAvailable,
-      ollamaBaseUrl,
-      ollamaModel,
-      dataPath: paths.dataDir,
-      defaultDataPath: paths.defaultDataDir,
-      usingCustomDataPath: paths.dataDir !== paths.defaultDataDir,
-    };
-  } catch {
-    return {
-      aiProvider,
-      openAiApiKeyConfigured: Boolean(sessionOpenAiApiKey?.trim().length),
-      encryptionAvailable,
-      ollamaBaseUrl,
-      ollamaModel,
-      dataPath: paths.dataDir,
-      defaultDataPath: paths.defaultDataDir,
-      usingCustomDataPath: paths.dataDir !== paths.defaultDataDir,
-    };
-  }
+  return {
+    aiProvider,
+    openAiApiKeyConfigured: Boolean(
+      getConfiguredSecret(OPENAI_KEY_SETTING, sessionOpenAiApiKey),
+    ),
+    encryptionAvailable,
+    ollamaBaseUrl,
+    ollamaModel,
+    braveSearchApiKeyConfigured: Boolean(
+      getConfiguredSecret(BRAVE_SEARCH_API_KEY_SETTING, sessionBraveSearchApiKey),
+    ),
+    youTubeApiKeyConfigured: Boolean(
+      getConfiguredSecret(YOUTUBE_API_KEY_SETTING, sessionYouTubeApiKey),
+    ),
+    researchSafetyMode,
+    dataPath: paths.dataDir,
+    defaultDataPath: paths.defaultDataDir,
+    usingCustomDataPath: paths.dataDir !== paths.defaultDataDir,
+  };
 };
 
 const storeOpenAiKey = (input: SaveSettingsInput): SettingsState => {
   const db = getDatabaseOrThrow();
   const parsed = saveSettingsSchema.parse(input);
 
-  if (typeof parsed.openAiApiKey !== 'undefined') {
-    const trimmedKey = parsed.openAiApiKey.trim();
-    const encryptionAvailable = safeStorage.isEncryptionAvailable();
+  upsertSecretSetting(OPENAI_KEY_SETTING, parsed.openAiApiKey, (value) => {
+    sessionOpenAiApiKey = value;
+  });
 
-    if (trimmedKey.length === 0) {
-      sessionOpenAiApiKey = null;
-      db.deleteSetting(OPENAI_KEY_SETTING);
-    } else {
-      if (!encryptionAvailable) {
-        sessionOpenAiApiKey = trimmedKey;
-      } else {
-        sessionOpenAiApiKey = null;
-        const encrypted = safeStorage.encryptString(trimmedKey).toString('base64');
-        db.upsertSetting(OPENAI_KEY_SETTING, encrypted, true);
-      }
-    }
-  }
+  upsertSecretSetting(BRAVE_SEARCH_API_KEY_SETTING, parsed.braveSearchApiKey, (value) => {
+    sessionBraveSearchApiKey = value;
+  });
+
+  upsertSecretSetting(YOUTUBE_API_KEY_SETTING, parsed.youTubeApiKey, (value) => {
+    sessionYouTubeApiKey = value;
+  });
 
   if (typeof parsed.aiProvider !== 'undefined') {
     db.upsertSetting(AI_PROVIDER_SETTING, parsed.aiProvider, false);
@@ -567,30 +608,21 @@ const storeOpenAiKey = (input: SaveSettingsInput): SettingsState => {
     db.upsertSetting(OLLAMA_MODEL_SETTING, normalizedModel, false);
   }
 
+  if (typeof parsed.researchSafetyMode !== 'undefined') {
+    db.upsertSetting(RESEARCH_SAFETY_MODE_SETTING, parsed.researchSafetyMode, false);
+  }
+
   return getSettingsState();
 };
 
 const getStoredOpenAiKeyOrThrow = (): string => {
-  if (sessionOpenAiApiKey && sessionOpenAiApiKey.trim().length > 0) {
-    return sessionOpenAiApiKey.trim();
-  }
+  const configured = getConfiguredSecret(OPENAI_KEY_SETTING, sessionOpenAiApiKey);
 
-  const db = getDatabaseOrThrow();
-  const raw = db.getSetting(OPENAI_KEY_SETTING);
-
-  if (!raw || !raw.encrypted) {
+  if (!configured) {
     throw new Error('Configure an OpenAI API key in Settings before analyzing a subject.');
   }
 
-  if (!safeStorage.isEncryptionAvailable()) {
-    throw new Error('Secure storage is unavailable, so the API key cannot be loaded.');
-  }
-
-  try {
-    return safeStorage.decryptString(Buffer.from(raw.value, 'base64')).trim();
-  } catch {
-    throw new Error('Stored OpenAI API key could not be decrypted.');
-  }
+  return configured;
 };
 
 const getAiProviderConfigOrThrow = (): {
@@ -616,6 +648,22 @@ const getAiProviderConfigOrThrow = (): {
     provider: 'openai',
     apiKey: getStoredOpenAiKeyOrThrow(),
     model: DEFAULT_OPENAI_INGESTION_MODEL,
+  };
+};
+
+const getResearchProviderConfig = () => {
+  const settings = getSettingsState();
+
+  return {
+    braveApiKey: getConfiguredSecret(
+      BRAVE_SEARCH_API_KEY_SETTING,
+      sessionBraveSearchApiKey,
+    ),
+    youTubeApiKey: getConfiguredSecret(
+      YOUTUBE_API_KEY_SETTING,
+      sessionYouTubeApiKey,
+    ),
+    safetyMode: settings.researchSafetyMode,
   };
 };
 
@@ -998,10 +1046,13 @@ const registerIpcHandlers = (): void => {
     async (_event, input: ResearchSearchInput): Promise<ResearchSearchResult> => {
       await ensureInitialized();
       const parsed = researchSearchSchema.parse(input);
-      return searchResearch({
-        query: parsed.query,
-        videoQuery: parsed.videoQuery ?? null,
-      });
+      return searchResearch(
+        {
+          query: parsed.query,
+          videoQuery: parsed.videoQuery ?? null,
+        },
+        getResearchProviderConfig(),
+      );
     },
   );
 
@@ -1058,6 +1109,15 @@ const registerIpcHandlers = (): void => {
     async (): Promise<ResearchBrowserState> => {
       await ensureInitialized();
       return getResearchBrowserOrThrow().hide();
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.RESEARCH_OPEN_EXTERNAL,
+    async (_event, input: ResearchExternalLinkInput): Promise<void> => {
+      await ensureInitialized();
+      const parsed = researchExternalLinkSchema.parse(input);
+      await openExternalUrl(parsed.url);
     },
   );
 
@@ -1170,7 +1230,7 @@ const createWindow = () => {
   );
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url);
+    void openExternalUrl(url);
     return { action: 'deny' };
   });
 

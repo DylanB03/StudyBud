@@ -1,18 +1,22 @@
-import { BrowserView, BrowserWindow, shell } from 'electron';
+import { BrowserView, BrowserWindow } from 'electron';
 
 import type {
   ResearchBrowserBoundsInput,
   ResearchBrowserNavigationInput,
   ResearchBrowserState,
 } from '../../shared/ipc';
+import { openExternalUrl } from '../system/open-external';
 
 const DEFAULT_BROWSER_STATE: ResearchBrowserState = {
   visible: false,
   url: '',
+  sourceUrl: '',
   title: '',
   canGoBack: false,
   canGoForward: false,
   loading: false,
+  errorMessage: null,
+  contentKind: 'web',
 };
 
 const normalizeBrowserUrl = (rawUrl: string): string => {
@@ -33,12 +37,38 @@ const normalizeBrowserUrl = (rawUrl: string): string => {
   return parsed.toString();
 };
 
+const isLikelyPdfUrl = (value: string): boolean => {
+  return /\.pdf(?:$|[?#])/i.test(value);
+};
+
+const toEmbeddedBrowserUrl = (rawUrl: string): string => {
+  const normalizedUrl = normalizeBrowserUrl(rawUrl);
+
+  if (!isLikelyPdfUrl(normalizedUrl)) {
+    return normalizedUrl;
+  }
+
+  return `https://docs.google.com/gview?embedded=1&url=${encodeURIComponent(
+    normalizedUrl,
+  )}`;
+};
+
 export class ResearchBrowserController {
   private browserView: BrowserView | null = null;
   private attachedWindow: BrowserWindow | null = null;
   private readonly windowProvider: () => BrowserWindow | null;
   private readonly emitState: (state: ResearchBrowserState) => void;
   private state: ResearchBrowserState = { ...DEFAULT_BROWSER_STATE };
+
+  private getSourceUrlForDisplay(actualUrl?: string): string {
+    const candidate = actualUrl || this.state.url;
+
+    if (/^https:\/\/docs\.google\.com\/gview/i.test(candidate) && this.state.sourceUrl) {
+      return this.state.sourceUrl;
+    }
+
+    return candidate || this.state.sourceUrl || '';
+  }
 
   constructor(input: {
     windowProvider: () => BrowserWindow | null;
@@ -76,7 +106,14 @@ export class ResearchBrowserController {
 
     this.browserView.setBackgroundColor('#0d1320');
     this.browserView.webContents.setWindowOpenHandler(({ url }) => {
-      void shell.openExternal(url);
+      const isHttpUrl = /^https?:\/\//i.test(url);
+
+      if (isHttpUrl) {
+        void this.browserView?.webContents.loadURL(toEmbeddedBrowserUrl(url));
+        return { action: 'deny' };
+      }
+
+      void openExternalUrl(url);
       return { action: 'deny' };
     });
 
@@ -84,7 +121,7 @@ export class ResearchBrowserController {
       this.syncStateFromWebContents();
     });
     this.browserView.webContents.on('did-start-loading', () => {
-      this.syncStateFromWebContents({ loading: true });
+      this.syncStateFromWebContents({ loading: true, errorMessage: null });
     });
     this.browserView.webContents.on('did-stop-loading', () => {
       this.syncStateFromWebContents({ loading: false });
@@ -95,8 +132,25 @@ export class ResearchBrowserController {
     this.browserView.webContents.on('did-navigate-in-page', () => {
       this.syncStateFromWebContents();
     });
-    this.browserView.webContents.on('did-fail-load', () => {
-      this.syncStateFromWebContents({ loading: false });
+    this.browserView.webContents.on(
+      'did-fail-load',
+      (_event, errorCode, errorDescription, validatedUrl, isMainFrame) => {
+        if (!isMainFrame) {
+          return;
+        }
+
+        this.syncStateFromWebContents({
+          loading: false,
+          errorMessage: `This page could not be loaded (${errorCode}: ${errorDescription}).`,
+          url: validatedUrl || this.state.url,
+        });
+      },
+    );
+    this.browserView.webContents.on('render-process-gone', () => {
+      this.syncStateFromWebContents({
+        loading: false,
+        errorMessage: 'The embedded research page stopped unexpectedly.',
+      });
     });
 
     return this.browserView;
@@ -117,11 +171,15 @@ export class ResearchBrowserController {
 
     const navigationHistory = webContents.navigationHistory;
 
+    const currentUrl = webContents.getURL();
+
     return this.updateState({
-      url: webContents.getURL(),
+      url: currentUrl,
+      sourceUrl: this.getSourceUrlForDisplay(currentUrl),
       title: webContents.getTitle(),
       canGoBack: navigationHistory.canGoBack(),
       canGoForward: navigationHistory.canGoForward(),
+      contentKind: isLikelyPdfUrl(this.getSourceUrlForDisplay(currentUrl)) ? 'pdf' : 'web',
       ...partial,
     });
   }
@@ -167,6 +225,7 @@ export class ResearchBrowserController {
     return this.updateState({
       visible: false,
       loading: false,
+      errorMessage: null,
     });
   }
 
@@ -174,11 +233,15 @@ export class ResearchBrowserController {
     input: ResearchBrowserNavigationInput,
   ): Promise<ResearchBrowserState> {
     const view = this.attachView();
-    const nextUrl = normalizeBrowserUrl(input.url);
+    const originalUrl = normalizeBrowserUrl(input.url);
+    const nextUrl = toEmbeddedBrowserUrl(originalUrl);
     this.updateState({
       visible: true,
       loading: true,
-      url: nextUrl,
+      url: originalUrl,
+      sourceUrl: originalUrl,
+      errorMessage: null,
+      contentKind: isLikelyPdfUrl(originalUrl) ? 'pdf' : 'web',
     });
     await view.webContents.loadURL(nextUrl);
     return this.syncStateFromWebContents({

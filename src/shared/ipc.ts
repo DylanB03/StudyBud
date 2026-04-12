@@ -21,6 +21,7 @@ export const IPC_CHANNELS = {
   RESEARCH_RELOAD: 'research:reload',
   RESEARCH_SET_BOUNDS: 'research:set-bounds',
   RESEARCH_HIDE_BROWSER: 'research:hide-browser',
+  RESEARCH_OPEN_EXTERNAL: 'research:open-external',
   RESEARCH_BROWSER_STATE: 'research:browser-state',
   DOCUMENTS_DELETE: 'documents:delete',
   DOCUMENTS_DETAIL: 'documents:detail',
@@ -42,6 +43,9 @@ export type SettingsState = {
   encryptionAvailable: boolean;
   ollamaBaseUrl: string;
   ollamaModel: string;
+  braveSearchApiKeyConfigured: boolean;
+  youTubeApiKeyConfigured: boolean;
+  researchSafetyMode: 'balanced' | 'education';
   dataPath: string;
   defaultDataPath: string;
   usingCustomDataPath: boolean;
@@ -52,6 +56,9 @@ export type SaveSettingsInput = {
   openAiApiKey?: string;
   ollamaBaseUrl?: string;
   ollamaModel?: string;
+  braveSearchApiKey?: string;
+  youTubeApiKey?: string;
+  researchSafetyMode?: 'balanced' | 'education';
 };
 
 export type SubjectSummary = {
@@ -341,6 +348,8 @@ export type ResearchSearchResult = {
   videoQuery: string;
   results: ResearchWebResult[];
   videos: ResearchVideoResult[];
+  provider: string;
+  safetyMode: 'balanced' | 'education';
 };
 
 export type ResearchBrowserBoundsInput = {
@@ -355,13 +364,20 @@ export type ResearchBrowserNavigationInput = {
   url: string;
 };
 
+export type ResearchExternalLinkInput = {
+  url: string;
+};
+
 export type ResearchBrowserState = {
   visible: boolean;
   url: string;
+  sourceUrl: string;
   title: string;
   canGoBack: boolean;
   canGoForward: boolean;
   loading: boolean;
+  errorMessage: string | null;
+  contentKind: 'web' | 'pdf';
 };
 
 export interface StudyBudApi {
@@ -393,6 +409,9 @@ export interface StudyBudApi {
     input: ResearchBrowserBoundsInput,
   ) => Promise<ResearchBrowserState>;
   hideResearchBrowser: () => Promise<ResearchBrowserState>;
+  openExternalResearchLink: (
+    input: ResearchExternalLinkInput,
+  ) => Promise<void>;
   onResearchBrowserState: (
     listener: (state: ResearchBrowserState) => void,
   ) => () => void;

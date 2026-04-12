@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import type { FormEvent, RefObject } from 'react';
 
 import type {
@@ -6,6 +7,7 @@ import type {
   ResearchVideoResult,
   ResearchWebResult,
 } from '../shared/ipc';
+import { RichMessageContent } from './RichMessageContent';
 
 type ResearchPanelProps = {
   panelRef: RefObject<HTMLElement | null>;
@@ -19,9 +21,12 @@ type ResearchPanelProps = {
   searchResult: ResearchSearchResult | null;
   suggestedSearchQueries: string[];
   suggestedVideoQueries: string[];
+  suggestionSourceContent: string | null;
+  suggestionSourceCreatedAt: string | null;
   onUseSuggestedSearch: (query: string) => void;
   onUseSuggestedVideoQuery: (query: string) => void;
   onOpenWebResult: (result: ResearchWebResult) => void;
+  onOpenWebResultExternally: (result: ResearchWebResult) => void;
   onOpenVideoResult: (result: ResearchVideoResult) => void;
   browserState: ResearchBrowserState;
   browserUrlInput: string;
@@ -31,6 +36,7 @@ type ResearchPanelProps = {
   onForwardBrowser: () => void;
   onReloadBrowser: () => void;
   onHideBrowser: () => void;
+  onOpenBrowserExternally: () => void;
   browserHostRef: RefObject<HTMLDivElement | null>;
 };
 
@@ -46,9 +52,12 @@ export const ResearchPanel = ({
   searchResult,
   suggestedSearchQueries,
   suggestedVideoQueries,
+  suggestionSourceContent,
+  suggestionSourceCreatedAt,
   onUseSuggestedSearch,
   onUseSuggestedVideoQuery,
   onOpenWebResult,
+  onOpenWebResultExternally,
   onOpenVideoResult,
   browserState,
   browserUrlInput,
@@ -58,8 +67,11 @@ export const ResearchPanel = ({
   onForwardBrowser,
   onReloadBrowser,
   onHideBrowser,
+  onOpenBrowserExternally,
   browserHostRef,
 }: ResearchPanelProps) => {
+  const resultSectionRef = useRef<HTMLDivElement | null>(null);
+
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     onSearch();
@@ -68,6 +80,21 @@ export const ResearchPanel = ({
   const handleBrowserSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     onNavigateBrowser();
+  };
+
+  const jumpToResults = () => {
+    const panel = panelRef.current;
+    const resultsSection = resultSectionRef.current;
+
+    if (!panel || !resultsSection) {
+      return;
+    }
+
+    const nextTop = Math.max(0, resultsSection.offsetTop - panel.offsetTop - 12);
+    panel.scrollTo({
+      top: nextTop,
+      behavior: 'smooth',
+    });
   };
 
   return (
@@ -110,6 +137,20 @@ export const ResearchPanel = ({
 
       {(suggestedSearchQueries.length > 0 || suggestedVideoQueries.length > 0) && (
         <section className="research-suggestions">
+          {suggestionSourceContent ? (
+            <div className="research-suggestion-source">
+              <strong>Suggestions From The Latest Answer</strong>
+              <div className="research-suggestion-source-copy">
+                <RichMessageContent content={suggestionSourceContent} />
+              </div>
+              {suggestionSourceCreatedAt ? (
+                <span>
+                  {new Date(suggestionSourceCreatedAt).toLocaleTimeString()}
+                </span>
+              ) : null}
+            </div>
+          ) : null}
+
           {suggestedSearchQueries.length > 0 ? (
             <div className="analysis-block">
               <span className="label">Suggested Web Queries</span>
@@ -153,11 +194,14 @@ export const ResearchPanel = ({
       {searchError ? <div className="warning-banner">{searchError}</div> : null}
 
       {searchResult ? (
-        <div className="research-results">
+        <div ref={resultSectionRef} className="research-results">
           <section className="analysis-block">
             <div className="sidebar-section-title">
               <h3>Web Results</h3>
-              <span>{searchResult.results.length}</span>
+              <span>
+                {searchResult.results.length} • {searchResult.provider} •{' '}
+                {searchResult.safetyMode}
+              </span>
             </div>
             {searchResult.results.length === 0 ? (
               <div className="empty-state">
@@ -166,16 +210,29 @@ export const ResearchPanel = ({
             ) : (
               <div className="research-result-list">
                 {searchResult.results.map((result) => (
-                  <button
-                    key={result.id}
-                    type="button"
-                    className="research-result-card"
-                    onClick={() => onOpenWebResult(result)}
-                  >
-                    <strong>{result.title}</strong>
-                    <span className="research-result-url">{result.displayUrl}</span>
-                    <p>{result.snippet || 'Open this source in the in-app browser.'}</p>
-                  </button>
+                  <article key={result.id} className="research-result-card">
+                    <button
+                      type="button"
+                      className="research-result-primary"
+                      onClick={() => onOpenWebResult(result)}
+                    >
+                      <strong>{result.title}</strong>
+                      <span className="research-result-url">{result.displayUrl}</span>
+                      <p>{result.snippet || 'Open this source in the in-app browser.'}</p>
+                    </button>
+                    <div className="research-result-actions">
+                      <button
+                        type="button"
+                        className="ghost-button"
+                        onClick={() => onOpenWebResultExternally(result)}
+                      >
+                        Open Externally
+                      </button>
+                      {result.url.toLowerCase().includes('.pdf') ? (
+                        <span className="analysis-count-pill">PDF</span>
+                      ) : null}
+                    </div>
+                  </article>
                 ))}
               </div>
             )}
@@ -273,6 +330,22 @@ export const ResearchPanel = ({
             <button
               type="button"
               className="ghost-button"
+              onClick={onOpenBrowserExternally}
+              disabled={!browserState.sourceUrl}
+            >
+              Open In Browser
+            </button>
+            <button
+              type="button"
+              className="ghost-button"
+              onClick={jumpToResults}
+              disabled={!searchResult}
+            >
+              Back To Results
+            </button>
+            <button
+              type="button"
+              className="ghost-button"
               onClick={onHideBrowser}
               disabled={!browserState.visible}
             >
@@ -282,7 +355,16 @@ export const ResearchPanel = ({
         </form>
 
         <div className="research-browser-meta">
-          <span>{browserState.loading ? 'Loading...' : browserState.title || 'Ready'}</span>
+          <span>
+            {browserState.loading
+              ? 'Loading page...'
+              : browserState.errorMessage
+                ? 'Page failed to load'
+                : browserState.title || 'Ready'}
+          </span>
+          {browserState.contentKind === 'pdf' ? (
+            <span className="research-browser-kind">PDF source</span>
+          ) : null}
         </div>
 
         <div
@@ -291,6 +373,26 @@ export const ResearchPanel = ({
             browserState.visible ? ' visible' : ''
           }`}
         >
+          {browserState.loading ? (
+            <div className="research-browser-overlay">
+              Loading the selected source inside StudyBud...
+            </div>
+          ) : null}
+          {browserState.errorMessage ? (
+            <div className="research-browser-overlay error">
+              <strong>{browserState.errorMessage}</strong>
+              <p>
+                {browserState.contentKind === 'pdf'
+                  ? 'This PDF could not be embedded. Open it in your default browser instead.'
+                  : 'Try opening this page externally if the site blocks embedding.'}
+              </p>
+              <div className="research-browser-overlay-actions">
+                <button type="button" onClick={onOpenBrowserExternally}>
+                  Open In Browser
+                </button>
+              </div>
+            </div>
+          ) : null}
           {!browserState.visible ? (
             <div className="research-browser-placeholder">
               Open a web result to read it inside StudyBud.

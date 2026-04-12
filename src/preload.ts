@@ -9,6 +9,7 @@ import {
   type CreateSubjectInput,
   type ImportDocumentsInput,
   type ResearchBrowserBoundsInput,
+  type ResearchExternalLinkInput,
   type ResearchBrowserNavigationInput,
   type ResearchBrowserState,
   type ResearchSearchInput,
@@ -55,6 +56,8 @@ const api: StudyBudApi = {
     ipcRenderer.invoke(IPC_CHANNELS.RESEARCH_SET_BOUNDS, input),
   hideResearchBrowser: () =>
     ipcRenderer.invoke(IPC_CHANNELS.RESEARCH_HIDE_BROWSER),
+  openExternalResearchLink: (input: ResearchExternalLinkInput) =>
+    ipcRenderer.invoke(IPC_CHANNELS.RESEARCH_OPEN_EXTERNAL, input),
   onResearchBrowserState: (
     listener: (state: ResearchBrowserState) => void,
   ) => {
