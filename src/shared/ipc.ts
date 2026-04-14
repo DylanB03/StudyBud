@@ -38,6 +38,11 @@ export type AppInfo = {
   electronVersion: string;
   runningInWsl: boolean;
   nativeDatabaseReady: boolean;
+  ocrRuntimeAvailable: boolean;
+  ocrEngine: string | null;
+  ocrRuntimeMessage: string | null;
+  ocrRuntimeMode: 'bundled' | 'python-fallback' | 'unavailable';
+  ocrRuntimePath: string | null;
 };
 
 export type AiProvider = 'openai' | 'ollama';
@@ -98,6 +103,9 @@ export type ImportJobSummary = {
   totalFiles: number;
   importedCount: number;
   failedCount: number;
+  ocrAttemptedCount: number;
+  ocrImprovedCount: number;
+  ocrFailedCount: number;
   createdAt: string;
   updatedAt: string;
 };
@@ -129,6 +137,11 @@ export type SourceDocumentSummary = {
   extractedTextLength: number;
   pagesWithExtractedText: number;
   extractionState: 'normal' | 'limited' | 'image-only';
+  ocrState: 'not-needed' | 'used' | 'partial' | 'unavailable';
+  ocrAttemptedPages: number;
+  ocrSucceededPages: number;
+  ocrImprovedPages: number;
+  ocrWarning: string | null;
   importStatus: DocumentImportStatus;
   errorMessage: string | null;
   createdAt: string;
@@ -141,6 +154,11 @@ export type DocumentPageSummary = {
   textLength: number;
   previewText: string;
   textContent: string;
+  textSource: 'native' | 'ocr' | 'merged';
+  ocrAttempted: boolean;
+  ocrSucceeded: boolean;
+  ocrConfidence: number | null;
+  ocrWarning: string | null;
 };
 
 export type SourceDocumentDetail = SourceDocumentSummary & {
@@ -209,6 +227,7 @@ export type SubjectAnalysisSummary = {
     documentName: string;
     documentKind: DocumentKind;
     pageNumber: number;
+    textSource: 'native' | 'ocr' | 'merged';
   }>;
 };
 

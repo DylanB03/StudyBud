@@ -244,6 +244,7 @@ const buildAnalysisSummaryFromRecord = (record: SubjectAnalysisRecord) => {
       documentName: page.documentName,
       documentKind: page.documentKind as 'lecture' | 'homework',
       pageNumber: page.pageNumber,
+      textSource: page.textSource,
     })),
   };
 };

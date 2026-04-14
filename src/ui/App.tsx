@@ -72,6 +72,7 @@ const WORKSPACE_SIDEBAR_WIDTH = 280;
 const WORKSPACE_MAIN_MIN_WIDTH = 460;
 const WORKSPACE_RESIZER_WIDTH = 10;
 const WORKSPACE_GAP_TOTAL = 54;
+const LAST_WORKSPACE_SUBJECT_STORAGE_KEY = 'studybud.lastWorkspaceSubjectId';
 
 const initialSettings: SettingsState = {
   aiProvider: 'openai',
@@ -189,6 +190,74 @@ const getExtractionWarningMessage = (
   return null;
 };
 
+const getDocumentOcrBadgeLabel = (
+  ocrState: SourceDocumentSummary['ocrState'],
+): string | null => {
+  if (ocrState === 'used') {
+    return 'ocr used';
+  }
+
+  if (ocrState === 'partial') {
+    return 'ocr partial';
+  }
+
+  if (ocrState === 'unavailable') {
+    return 'ocr unavailable';
+  }
+
+  return null;
+};
+
+const getDocumentOcrWarningMessage = (
+  document: Pick<SourceDocumentSummary, 'ocrState' | 'ocrWarning' | 'ocrAttemptedPages'>,
+): string | null => {
+  if (document.ocrWarning) {
+    return document.ocrWarning;
+  }
+
+  if (document.ocrState === 'unavailable' && document.ocrAttemptedPages > 0) {
+    return 'StudyBud detected pages that would benefit from OCR, but the local OCR runtime was unavailable during import.';
+  }
+
+  if (document.ocrState === 'partial') {
+    return 'StudyBud attempted OCR on flagged pages, but some pages still have limited extracted text.';
+  }
+
+  return null;
+};
+
+const getPageTextSourceLabel = (
+  page: Pick<SourceDocumentDetail['pages'][number], 'textSource' | 'ocrAttempted'>,
+): string | null => {
+  if (!page.ocrAttempted) {
+    return null;
+  }
+
+  if (page.textSource === 'ocr') {
+    return 'OCR text';
+  }
+
+  if (page.textSource === 'merged') {
+    return 'Merged text';
+  }
+
+  return 'Native text';
+};
+
+const getAnalysisTextSourceLabel = (
+  textSource: 'native' | 'ocr' | 'merged',
+): string => {
+  if (textSource === 'ocr') {
+    return 'OCR text';
+  }
+
+  if (textSource === 'merged') {
+    return 'Merged text';
+  }
+
+  return 'Native text';
+};
+
 const getFirstReadyDocumentId = (
   workspace: SubjectWorkspace,
 ): string | null => {
@@ -296,6 +365,7 @@ export const App = () => {
     useState<ResearchBrowserState>(initialResearchBrowserState);
   const [researchBrowserUrlInput, setResearchBrowserUrlInput] = useState('');
   const [isOnline, setIsOnline] = useState<boolean>(getNavigatorOnline);
+  const [isUnassignedPagesExpanded, setIsUnassignedPagesExpanded] = useState(false);
   const [isPageTextExpanded, setIsPageTextExpanded] = useState(false);
   const [chatPanelWidth, setChatPanelWidth] = useState<number>(() => {
     if (typeof window === 'undefined') {
@@ -312,6 +382,15 @@ export const App = () => {
       Math.max(CHAT_PANEL_MIN_WIDTH, stored),
     );
   });
+  const [lastWorkspaceSubjectId, setLastWorkspaceSubjectId] = useState<string | null>(
+    () => {
+      if (typeof window === 'undefined') {
+        return null;
+      }
+
+      return window.localStorage.getItem(LAST_WORKSPACE_SUBJECT_STORAGE_KEY);
+    },
+  );
   const [isResizingChatPanel, setIsResizingChatPanel] = useState(false);
   const [busy, setBusy] = useState(false);
   const [pendingChatPrompt, setPendingChatPrompt] = useState<string | null>(null);
@@ -439,6 +518,40 @@ export const App = () => {
       String(chatPanelWidth),
     );
   }, [chatPanelWidth]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    if (lastWorkspaceSubjectId) {
+      window.localStorage.setItem(
+        LAST_WORKSPACE_SUBJECT_STORAGE_KEY,
+        lastWorkspaceSubjectId,
+      );
+      return;
+    }
+
+    window.localStorage.removeItem(LAST_WORKSPACE_SUBJECT_STORAGE_KEY);
+  }, [lastWorkspaceSubjectId]);
+
+  useEffect(() => {
+    const activeWorkspaceSubjectId = workspace?.subject.id ?? null;
+
+    if (activeWorkspaceSubjectId && activeWorkspaceSubjectId !== lastWorkspaceSubjectId) {
+      setLastWorkspaceSubjectId(activeWorkspaceSubjectId);
+    }
+  }, [lastWorkspaceSubjectId, workspace?.subject.id]);
+
+  useEffect(() => {
+    if (
+      lastWorkspaceSubjectId &&
+      subjects.length > 0 &&
+      !subjects.some((subject) => subject.id === lastWorkspaceSubjectId)
+    ) {
+      setLastWorkspaceSubjectId(null);
+    }
+  }, [lastWorkspaceSubjectId, subjects]);
 
   useEffect(() => {
     if (!studybud) {
@@ -678,6 +791,10 @@ export const App = () => {
   }, [selectedDocumentId]);
 
   useEffect(() => {
+    setIsUnassignedPagesExpanded(false);
+  }, [workspace?.subject.id, workspace?.analysis]);
+
+  useEffect(() => {
     const divisions = workspace?.analysis?.divisions ?? [];
 
     if (divisions.length === 0) {
@@ -881,6 +998,7 @@ export const App = () => {
           subject.id === nextWorkspace.subject.id ? nextWorkspace.subject : subject,
         ),
       );
+      setLastWorkspaceSubjectId(nextWorkspace.subject.id);
       setActiveView('workspace');
       setSelectedCitationKey(null);
       setResearchError(null);
@@ -900,6 +1018,21 @@ export const App = () => {
     } finally {
       setBusy(false);
     }
+  };
+
+  const handleOpenWorkspace = async () => {
+    const subjectId = workspace?.subject.id ?? lastWorkspaceSubjectId;
+
+    if (!subjectId) {
+      return;
+    }
+
+    if (workspace?.subject.id === subjectId) {
+      setActiveView('workspace');
+      return;
+    }
+
+    await refreshSubjectWorkspace(subjectId);
   };
 
   const openCitationSourcePage = (citation: CitationRef) => {
@@ -1264,6 +1397,10 @@ export const App = () => {
       setSubjects((previous) =>
         previous.filter((item) => item.id !== subject.id),
       );
+
+      if (lastWorkspaceSubjectId === subject.id) {
+        setLastWorkspaceSubjectId(null);
+      }
 
       if (workspace?.subject.id === subject.id) {
         setWorkspace(null);
@@ -2206,6 +2343,11 @@ export const App = () => {
           .filter(Boolean)
           .join(' + ')
       : 'Fallback scraping mode';
+  const ocrDiagnosticsStatus = appInfo
+    ? appInfo.ocrRuntimeAvailable
+      ? `${appInfo.ocrEngine ?? 'OCR runtime ready'} (${appInfo.ocrRuntimeMode})`
+      : appInfo.ocrRuntimeMessage ?? 'OCR runtime unavailable'
+    : 'Loading...';
 
   const renderLibrary = () => {
     return (
@@ -2541,6 +2683,14 @@ export const App = () => {
               <strong>{aiDiagnosticsStatus}</strong>
             </div>
             <div>
+              <span className="label">OCR Runtime</span>
+              <strong>{ocrDiagnosticsStatus}</strong>
+            </div>
+            <div>
+              <span className="label">OCR Mode</span>
+              <strong>{appInfo?.ocrRuntimeMode ?? 'Loading...'}</strong>
+            </div>
+            <div>
               <span className="label">Research Status</span>
               <strong>{researchDiagnosticsStatus}</strong>
             </div>
@@ -2558,6 +2708,10 @@ export const App = () => {
             <div>
               <span className="label">User Data Path</span>
               <code>{appInfo?.userDataPath ?? 'Loading...'}</code>
+            </div>
+            <div>
+              <span className="label">OCR Runtime Path</span>
+              <code>{appInfo?.ocrRuntimePath ?? 'Not resolved'}</code>
             </div>
           </div>
         </section>
@@ -2778,71 +2932,109 @@ export const App = () => {
                   lecture or homework documents.
                 </div>
               ) : (
-                <div className="document-list">
-                  {workspace.documents.map((document) => (
-                    <article
-                      key={document.id}
-                      className={`document-card-shell${selectedDocumentId === document.id ? ' active' : ''}`}
-                    >
-                      <button
-                        type="button"
-                        className="document-card"
-                        onClick={() => {
-                          pendingPageSelectionRef.current = null;
-                          setSelectedDocumentId(document.id);
-                        }}
-                      >
-                        <div className="document-card-header">
-                          <strong>{document.originalFileName}</strong>
-                          <div className="analysis-chip-list">
-                            <span className={`pill pill-${document.kind}`}>
-                              {document.kind}
-                            </span>
-                            {document.importStatus === 'ready' &&
-                            document.extractionState !== 'normal' ? (
-                              <span
-                                className={`pill pill-${
-                                  document.extractionState === 'image-only'
-                                    ? 'image-only'
-                                    : 'limited'
-                                }`}
-                              >
-                                {document.extractionState === 'image-only'
-                                  ? 'image-only'
-                                  : 'limited text'}
-                              </span>
-                            ) : null}
-                          </div>
+                <div className="document-list document-groups">
+                  {(['lecture', 'homework'] as const).map((kind) => {
+                    const groupedDocuments = workspace.documents.filter(
+                      (document) => document.kind === kind,
+                    );
+
+                    if (groupedDocuments.length === 0) {
+                      return null;
+                    }
+
+                    return (
+                      <section key={kind} className="document-group">
+                        <div className="document-group-header">
+                          <h4>{kind === 'lecture' ? 'Lectures' : 'Homework'}</h4>
+                          <span>{groupedDocuments.length}</span>
                         </div>
-                        <span className="document-card-meta">
-                          {document.importStatus === 'ready'
-                            ? `${document.pageCount} pages • ${document.pagesWithExtractedText}/${document.pageCount} with text`
-                            : 'Import failed'}
-                        </span>
-                        {document.importStatus === 'ready' &&
-                        document.extractionState !== 'normal' ? (
-                          <span className="document-card-error">
-                            {document.extractionState === 'image-only'
-                              ? 'Scanned/image-only PDF likely'
-                              : 'Only limited text was extracted'}
-                          </span>
-                        ) : null}
-                        {document.errorMessage ? (
-                          <span className="document-card-error">
-                            {document.errorMessage}
-                          </span>
-                        ) : null}
-                      </button>
-                      <button
-                        type="button"
-                        className="document-delete-button"
-                        disabled={busy}
-                        onClick={() => void handleDeleteDocument(document.id)}
-                      >
-                        Delete
-                      </button>
-                    </article>
-                  ))}
+
+                        <div className="document-group-list">
+                          {groupedDocuments.map((document) => (
+                            <article
+                              key={document.id}
+                              className={`document-card-shell${
+                                selectedDocumentId === document.id ? ' active' : ''
+                              }`}
+                            >
+                              <button
+                                type="button"
+                                className="document-card"
+                                onClick={() => {
+                                  pendingPageSelectionRef.current = null;
+                                  setSelectedDocumentId(document.id);
+                                }}
+                              >
+                                <div className="document-card-header">
+                                  <strong>{document.originalFileName}</strong>
+                                  <div className="analysis-chip-list">
+                                    <span className={`pill pill-${document.kind}`}>
+                                      {document.kind}
+                                    </span>
+                                    {getDocumentOcrBadgeLabel(document.ocrState) ? (
+                                      <span className="pill pill-ocr">
+                                        {getDocumentOcrBadgeLabel(document.ocrState)}
+                                      </span>
+                                    ) : null}
+                                    {document.importStatus === 'ready' &&
+                                    document.extractionState !== 'normal' ? (
+                                      <span
+                                        className={`pill pill-${
+                                          document.extractionState === 'image-only'
+                                            ? 'image-only'
+                                            : 'limited'
+                                        }`}
+                                      >
+                                        {document.extractionState === 'image-only'
+                                          ? 'image-only'
+                                          : 'limited text'}
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                </div>
+                                <span className="document-card-meta">
+                                  {document.importStatus === 'ready'
+                                    ? `${document.pageCount} pages • ${document.pagesWithExtractedText}/${document.pageCount} with text${
+                                        document.ocrImprovedPages > 0
+                                          ? ` • OCR improved ${document.ocrImprovedPages}`
+                                          : ''
+                                      }`
+                                    : 'Import failed'}
+                                </span>
+                                {document.importStatus === 'ready' &&
+                                getDocumentOcrWarningMessage(document) ? (
+                                  <span className="document-card-error">
+                                    {getDocumentOcrWarningMessage(document)}
+                                  </span>
+                                ) : null}
+                                {document.importStatus === 'ready' &&
+                                document.extractionState !== 'normal' ? (
+                                  <span className="document-card-error">
+                                    {document.extractionState === 'image-only'
+                                      ? 'Scanned/image-only PDF likely'
+                                      : 'Only limited text was extracted'}
+                                  </span>
+                                ) : null}
+                                {document.errorMessage ? (
+                                  <span className="document-card-error">
+                                    {document.errorMessage}
+                                  </span>
+                                ) : null}
+                              </button>
+                              <button
+                                type="button"
+                                className="document-delete-button"
+                                disabled={busy}
+                                onClick={() => void handleDeleteDocument(document.id)}
+                              >
+                                Delete
+                              </button>
+                            </article>
+                          ))}
+                        </div>
+                      </section>
+                    );
+                  })}
                 </div>
               )}
             </section>
@@ -3129,18 +3321,47 @@ export const App = () => {
                         </span>
                       </div>
 
-                      <div className="analysis-source-list">
-                        {workspace.analysis.unassignedPages.map((page) => (
-                          <span
-                            key={page.id}
-                            className="analysis-unassigned-row"
-                            onMouseUp={() => handleUnassignedPageSelection(page)}
-                          >
-                            {page.documentName} • page {page.pageNumber}
-                            {page.reason ? ` - ${page.reason}` : ''}
+                      <div className="page-text-panel-actions analysis-unassigned-actions">
+                        <button
+                          type="button"
+                          className="page-text-toggle"
+                          onClick={() =>
+                            setIsUnassignedPagesExpanded((current) => !current)
+                          }
+                          aria-expanded={isUnassignedPagesExpanded}
+                        >
+                          <span className="page-text-toggle-arrow" aria-hidden="true">
+                            {isUnassignedPagesExpanded ? '▾' : '▸'}
                           </span>
-                        ))}
+                          {isUnassignedPagesExpanded ? 'Hide pages' : 'Show pages'}
+                        </button>
                       </div>
+
+                      {isUnassignedPagesExpanded ? (
+                        <div className="analysis-source-list">
+                          {workspace.analysis.unassignedPages.map((page) => (
+                            <span
+                              key={page.id}
+                              className="analysis-unassigned-row"
+                              onMouseUp={() => handleUnassignedPageSelection(page)}
+                            >
+                              <span>
+                                {page.documentName} • page {page.pageNumber}
+                                {page.reason ? ` - ${page.reason}` : ''}
+                              </span>
+                              <span className="page-text-source-pill">
+                                {getAnalysisTextSourceLabel(page.textSource)}
+                              </span>
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="empty-state page-text-collapsed-state">
+                          Expand this section to inspect which pages were left
+                          unassigned and whether their analyzed text came from
+                          native extraction, OCR, or a merged result.
+                        </div>
+                      )}
                     </article>
                   ) : null}
                 </div>
@@ -3173,6 +3394,11 @@ export const App = () => {
                       <span className={`pill pill-${documentDetail.kind}`}>
                         {documentDetail.kind}
                       </span>
+                      {getDocumentOcrBadgeLabel(documentDetail.ocrState) ? (
+                        <span className="pill pill-ocr">
+                          {getDocumentOcrBadgeLabel(documentDetail.ocrState)}
+                        </span>
+                      ) : null}
                       {documentDetail.extractionState !== 'normal' ? (
                         <span
                           className={`pill pill-${
@@ -3188,6 +3414,14 @@ export const App = () => {
                       ) : null}
                     </div>
                   </div>
+
+                  {getDocumentOcrWarningMessage(documentDetail) ? (
+                    <DismissibleBanner
+                      dismissKey={`document-ocr-warning:${documentDetail.id}:${documentDetail.ocrState}:${documentDetail.ocrWarning ?? ''}`}
+                    >
+                      {getDocumentOcrWarningMessage(documentDetail)}
+                    </DismissibleBanner>
+                  ) : null}
 
                   {getExtractionWarningMessage(documentDetail.extractionState) ? (
                     <DismissibleBanner
@@ -3241,7 +3475,14 @@ export const App = () => {
                             className={`page-text-card${selectedPageNumber === page.pageNumber ? ' active' : ''}`}
                             onClick={() => setSelectedPageNumber(page.pageNumber)}
                           >
-                            <strong>Page {page.pageNumber}</strong>
+                            <div className="page-text-card-header">
+                              <strong>Page {page.pageNumber}</strong>
+                              {getPageTextSourceLabel(page) ? (
+                                <span className="page-text-source-pill">
+                                  {getPageTextSourceLabel(page)}
+                                </span>
+                              ) : null}
+                            </div>
                             <p onMouseUp={() => handlePageTextSelection(page)}>
                               {page.pageNumber === selectedPageNumber &&
                               selectedCitation &&
@@ -3255,6 +3496,9 @@ export const App = () => {
                                   )
                                 : page.previewText || 'No text extracted on this page.'}
                             </p>
+                            {page.ocrWarning ? (
+                              <span className="page-text-warning">{page.ocrWarning}</span>
+                            ) : null}
                           </button>
                         ))}
                       </div>
@@ -3397,9 +3641,11 @@ export const App = () => {
             </button>
             <button
               className=""
-              onClick={() => setActiveView('workspace')}
+              onClick={() => {
+                void handleOpenWorkspace();
+              }}
               type="button"
-              disabled={!workspace}
+              disabled={!(workspace?.subject.id ?? lastWorkspaceSubjectId)}
             >
               Workspace
             </button>

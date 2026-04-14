@@ -354,6 +354,7 @@ code {
   border-radius: 14px;
   background: rgba(8, 14, 31, 0.45);
   overflow: hidden;
+  min-width: 0;
 }
 
 .subject-card-shell {
@@ -376,6 +377,7 @@ code {
   color: var(--text-main);
   text-align: left;
   padding: 10px 12px;
+  min-width: 0;
 }
 
 .page-text-card.active,
@@ -429,6 +431,7 @@ code {
 
 .document-card-header {
   margin-bottom: 6px;
+  flex-wrap: wrap;
 }
 
 .document-card-header strong {
@@ -477,6 +480,11 @@ code {
 .pill-image-only {
   color: #fef2f2;
   background: rgba(220, 38, 38, 0.88);
+}
+
+.pill-ocr {
+  color: #eff6ff;
+  background: rgba(37, 99, 235, 0.86);
 }
 
 .pill-status-completed,
@@ -828,6 +836,8 @@ code {
 .analysis-unassigned-row {
   display: inline-flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   border: 1px solid rgba(252, 165, 165, 0.22);
   border-radius: 12px;
   padding: 8px 10px;
@@ -835,6 +845,11 @@ code {
   color: var(--text-main);
   line-height: 1.4;
   user-select: text;
+}
+
+.analysis-unassigned-row > span:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .division-nav-list {
@@ -1519,6 +1534,45 @@ code {
   padding-right: 4px;
 }
 
+.document-groups {
+  gap: 14px;
+  align-content: start;
+}
+
+.document-group {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.document-group-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(117, 215, 249, 0.12);
+}
+
+.document-group-header h4 {
+  margin: 0;
+  font-size: 0.92rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-main);
+}
+
+.document-group-header span {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.document-group-list {
+  display: grid;
+  gap: 10px;
+}
+
 .document-inspector-header {
   display: flex;
   justify-content: space-between;
@@ -1629,6 +1683,10 @@ code {
   justify-content: flex-end;
 }
 
+.analysis-unassigned-actions {
+  justify-content: flex-start;
+}
+
 .page-text-toggle {
   border: 1px solid rgba(117, 215, 249, 0.2);
   border-radius: 999px;
@@ -1665,8 +1723,36 @@ code {
   overflow: hidden;
 }
 
+.page-text-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.page-text-source-pill {
+  border: 1px solid rgba(117, 215, 249, 0.2);
+  border-radius: 999px;
+  padding: 3px 8px;
+  color: var(--accent);
+  background: rgba(52, 183, 243, 0.08);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
 .page-text-card p {
   margin-top: 6px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.page-text-warning {
+  display: block;
+  margin-top: 8px;
+  color: var(--warning);
+  font-size: 0.8rem;
   line-height: 1.35;
   overflow-wrap: anywhere;
 }

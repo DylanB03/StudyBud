@@ -103,6 +103,8 @@ describe('DatabaseService', () => {
       id: 'doc-1',
       pageCount: 2,
       importStatus: 'ready',
+      ocrState: 'not-needed',
+      ocrAttemptedPages: 0,
     });
 
     const pages = database.getPagesByDocument('doc-1');
@@ -110,6 +112,8 @@ describe('DatabaseService', () => {
     expect(pages[0]).toMatchObject({
       pageNumber: 1,
       textContent: 'Vectors and span',
+      textSource: 'native',
+      ocrAttempted: false,
     });
 
     const jobs = database.listJobsBySubject('subject-1');

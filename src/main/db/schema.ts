@@ -1,4 +1,4 @@
-import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import { integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
 export const settingsTable = sqliteTable('settings', {
   key: text('key').primaryKey(),
@@ -34,6 +34,11 @@ export const sourceDocumentsTable = sqliteTable('source_documents', {
   relativePath: text('relative_path'),
   mimeType: text('mime_type').notNull(),
   pageCount: integer('page_count').notNull().default(0),
+  ocrState: text('ocr_state').notNull().default('not-needed'),
+  ocrAttemptedPages: integer('ocr_attempted_pages').notNull().default(0),
+  ocrSucceededPages: integer('ocr_succeeded_pages').notNull().default(0),
+  ocrImprovedPages: integer('ocr_improved_pages').notNull().default(0),
+  ocrWarning: text('ocr_warning'),
   importStatus: text('import_status').notNull(),
   errorMessage: text('error_message'),
   createdAt: integer('created_at').notNull(),
@@ -46,6 +51,11 @@ export const documentPagesTable = sqliteTable('document_pages', {
   pageNumber: integer('page_number').notNull(),
   textContent: text('text_content').notNull(),
   textLength: integer('text_length').notNull(),
+  textSource: text('text_source').notNull().default('native'),
+  ocrAttempted: integer('ocr_attempted', { mode: 'boolean' }).notNull().default(false),
+  ocrSucceeded: integer('ocr_succeeded', { mode: 'boolean' }).notNull().default(false),
+  ocrConfidence: real('ocr_confidence'),
+  ocrWarning: text('ocr_warning'),
   createdAt: integer('created_at').notNull(),
 });
 

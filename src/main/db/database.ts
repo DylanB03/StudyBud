@@ -71,6 +71,11 @@ export type SourceDocumentRow = {
   relativePath: string | null;
   mimeType: string;
   pageCount: number;
+  ocrState: 'not-needed' | 'used' | 'partial' | 'unavailable';
+  ocrAttemptedPages: number;
+  ocrSucceededPages: number;
+  ocrImprovedPages: number;
+  ocrWarning: string | null;
   importStatus: string;
   errorMessage: string | null;
   createdAt: number;
@@ -83,6 +88,11 @@ export type DocumentPageRow = {
   pageNumber: number;
   textContent: string;
   textLength: number;
+  textSource: 'native' | 'ocr' | 'merged';
+  ocrAttempted: boolean;
+  ocrSucceeded: boolean;
+  ocrConfidence: number | null;
+  ocrWarning: string | null;
   createdAt: number;
 };
 
@@ -193,6 +203,7 @@ export type SubjectPageContextRow = {
   pageNumber: number;
   textContent: string;
   textLength: number;
+  textSource: 'native' | 'ocr' | 'merged';
 };
 
 export type SubjectChunkContextRow = {
@@ -229,11 +240,31 @@ export type InsertPracticeSetInput = {
 };
 
 export type InsertImportedDocumentInput = {
-  document: Omit<SourceDocumentRow, 'createdAt' | 'updatedAt'>;
+  document: Omit<
+    SourceDocumentRow,
+    | 'createdAt'
+    | 'updatedAt'
+    | 'ocrState'
+    | 'ocrAttemptedPages'
+    | 'ocrSucceededPages'
+    | 'ocrImprovedPages'
+    | 'ocrWarning'
+  > & {
+    ocrState?: SourceDocumentRow['ocrState'];
+    ocrAttemptedPages?: number;
+    ocrSucceededPages?: number;
+    ocrImprovedPages?: number;
+    ocrWarning?: string | null;
+  };
   pages: Array<{
     id: string;
     pageNumber: number;
     textContent: string;
+    textSource?: DocumentPageRow['textSource'];
+    ocrAttempted?: boolean;
+    ocrSucceeded?: boolean;
+    ocrConfidence?: number | null;
+    ocrWarning?: string | null;
   }>;
   chunks: Array<{
     id: string;
@@ -245,6 +276,35 @@ export type InsertImportedDocumentInput = {
 
 const createNow = (): number => Date.now();
 type BetterSqlite3Constructor = new (path: string) => Database.Database;
+
+const DEFAULT_DOCUMENT_OCR_STATE: SourceDocumentRow['ocrState'] = 'not-needed';
+const DEFAULT_PAGE_TEXT_SOURCE: DocumentPageRow['textSource'] = 'native';
+
+const normalizeDocumentRow = (
+  row: Omit<SourceDocumentRow, 'ocrState'> & { ocrState: string },
+): SourceDocumentRow => {
+  return {
+    ...row,
+    ocrState:
+      row.ocrState === 'used' ||
+      row.ocrState === 'partial' ||
+      row.ocrState === 'unavailable'
+        ? row.ocrState
+        : DEFAULT_DOCUMENT_OCR_STATE,
+  };
+};
+
+const normalizeDocumentPageRow = (
+  row: Omit<DocumentPageRow, 'textSource'> & { textSource: string },
+): DocumentPageRow => {
+  return {
+    ...row,
+    textSource:
+      row.textSource === 'ocr' || row.textSource === 'merged'
+        ? row.textSource
+        : DEFAULT_PAGE_TEXT_SOURCE,
+  };
+};
 
 export class DatabaseService {
   private readonly sqlite: Database.Database;
@@ -320,12 +380,45 @@ export class DatabaseService {
         relative_path TEXT,
         mime_type TEXT NOT NULL,
         page_count INTEGER NOT NULL DEFAULT 0,
+        ocr_state TEXT NOT NULL DEFAULT 'not-needed',
+        ocr_attempted_pages INTEGER NOT NULL DEFAULT 0,
+        ocr_succeeded_pages INTEGER NOT NULL DEFAULT 0,
+        ocr_improved_pages INTEGER NOT NULL DEFAULT 0,
+        ocr_warning TEXT,
         import_status TEXT NOT NULL,
         error_message TEXT,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
       );
     `);
+
+    if (!this.hasColumn('source_documents', 'ocr_state')) {
+      this.sqlite.exec(
+        `ALTER TABLE source_documents ADD COLUMN ocr_state TEXT NOT NULL DEFAULT 'not-needed';`,
+      );
+    }
+
+    if (!this.hasColumn('source_documents', 'ocr_attempted_pages')) {
+      this.sqlite.exec(
+        `ALTER TABLE source_documents ADD COLUMN ocr_attempted_pages INTEGER NOT NULL DEFAULT 0;`,
+      );
+    }
+
+    if (!this.hasColumn('source_documents', 'ocr_succeeded_pages')) {
+      this.sqlite.exec(
+        `ALTER TABLE source_documents ADD COLUMN ocr_succeeded_pages INTEGER NOT NULL DEFAULT 0;`,
+      );
+    }
+
+    if (!this.hasColumn('source_documents', 'ocr_improved_pages')) {
+      this.sqlite.exec(
+        `ALTER TABLE source_documents ADD COLUMN ocr_improved_pages INTEGER NOT NULL DEFAULT 0;`,
+      );
+    }
+
+    if (!this.hasColumn('source_documents', 'ocr_warning')) {
+      this.sqlite.exec(`ALTER TABLE source_documents ADD COLUMN ocr_warning TEXT;`);
+    }
 
     this.sqlite.exec(`
       CREATE TABLE IF NOT EXISTS document_pages (
@@ -334,9 +427,40 @@ export class DatabaseService {
         page_number INTEGER NOT NULL,
         text_content TEXT NOT NULL,
         text_length INTEGER NOT NULL,
+        text_source TEXT NOT NULL DEFAULT 'native',
+        ocr_attempted INTEGER NOT NULL DEFAULT 0,
+        ocr_succeeded INTEGER NOT NULL DEFAULT 0,
+        ocr_confidence REAL,
+        ocr_warning TEXT,
         created_at INTEGER NOT NULL
       );
     `);
+
+    if (!this.hasColumn('document_pages', 'text_source')) {
+      this.sqlite.exec(
+        `ALTER TABLE document_pages ADD COLUMN text_source TEXT NOT NULL DEFAULT 'native';`,
+      );
+    }
+
+    if (!this.hasColumn('document_pages', 'ocr_attempted')) {
+      this.sqlite.exec(
+        `ALTER TABLE document_pages ADD COLUMN ocr_attempted INTEGER NOT NULL DEFAULT 0;`,
+      );
+    }
+
+    if (!this.hasColumn('document_pages', 'ocr_succeeded')) {
+      this.sqlite.exec(
+        `ALTER TABLE document_pages ADD COLUMN ocr_succeeded INTEGER NOT NULL DEFAULT 0;`,
+      );
+    }
+
+    if (!this.hasColumn('document_pages', 'ocr_confidence')) {
+      this.sqlite.exec(`ALTER TABLE document_pages ADD COLUMN ocr_confidence REAL;`);
+    }
+
+    if (!this.hasColumn('document_pages', 'ocr_warning')) {
+      this.sqlite.exec(`ALTER TABLE document_pages ADD COLUMN ocr_warning TEXT;`);
+    }
 
     this.sqlite.exec(`
       CREATE INDEX IF NOT EXISTS document_pages_document_idx
@@ -688,17 +812,27 @@ export class DatabaseService {
       .from(sourceDocumentsTable)
       .where(eq(sourceDocumentsTable.subjectId, subjectId))
       .orderBy(desc(sourceDocumentsTable.createdAt))
-      .all();
+      .all()
+      .map((row) =>
+        normalizeDocumentRow(
+          row as Omit<SourceDocumentRow, 'ocrState'> & { ocrState: string },
+        ),
+      );
   }
 
   getDocumentById(documentId: string): SourceDocumentRow | null {
-    return (
+    const row =
       this.db
         .select()
         .from(sourceDocumentsTable)
         .where(eq(sourceDocumentsTable.id, documentId))
-        .get() ?? null
-    );
+        .get() ?? null;
+
+    return row
+      ? normalizeDocumentRow(
+          row as Omit<SourceDocumentRow, 'ocrState'> & { ocrState: string },
+        )
+      : null;
   }
 
   deleteDocument(documentId: string): SourceDocumentRow | null {
@@ -734,7 +868,12 @@ export class DatabaseService {
       .from(documentPagesTable)
       .where(eq(documentPagesTable.documentId, documentId))
       .orderBy(documentPagesTable.pageNumber)
-      .all();
+      .all()
+      .map((row) =>
+        normalizeDocumentPageRow(
+          row as Omit<DocumentPageRow, 'textSource'> & { textSource: string },
+        ),
+      );
   }
 
   listChatMessagesBySubject(subjectId: string, divisionId?: string): ChatMessageRow[] {
@@ -1096,6 +1235,11 @@ export class DatabaseService {
     const now = createNow();
     const documentRow: SourceDocumentRow = {
       ...input.document,
+      ocrState: input.document.ocrState ?? DEFAULT_DOCUMENT_OCR_STATE,
+      ocrAttemptedPages: input.document.ocrAttemptedPages ?? 0,
+      ocrSucceededPages: input.document.ocrSucceededPages ?? 0,
+      ocrImprovedPages: input.document.ocrImprovedPages ?? 0,
+      ocrWarning: input.document.ocrWarning ?? null,
       createdAt: now,
       updatedAt: now,
     };
@@ -1113,6 +1257,11 @@ export class DatabaseService {
               pageNumber: page.pageNumber,
               textContent: page.textContent,
               textLength: page.textContent.length,
+              textSource: page.textSource ?? DEFAULT_PAGE_TEXT_SOURCE,
+              ocrAttempted: page.ocrAttempted ?? false,
+              ocrSucceeded: page.ocrSucceeded ?? false,
+              ocrConfidence: page.ocrConfidence ?? null,
+              ocrWarning: page.ocrWarning ?? null,
               createdAt: now,
             })),
           )
@@ -1144,11 +1293,31 @@ export class DatabaseService {
   }
 
   insertFailedDocument(
-    document: Omit<SourceDocumentRow, 'createdAt' | 'updatedAt'>,
+    document: Omit<
+      SourceDocumentRow,
+      | 'createdAt'
+      | 'updatedAt'
+      | 'ocrState'
+      | 'ocrAttemptedPages'
+      | 'ocrSucceededPages'
+      | 'ocrImprovedPages'
+      | 'ocrWarning'
+    > & {
+      ocrState?: SourceDocumentRow['ocrState'];
+      ocrAttemptedPages?: number;
+      ocrSucceededPages?: number;
+      ocrImprovedPages?: number;
+      ocrWarning?: string | null;
+    },
   ): SourceDocumentRow {
     const now = createNow();
     const row: SourceDocumentRow = {
       ...document,
+      ocrState: document.ocrState ?? DEFAULT_DOCUMENT_OCR_STATE,
+      ocrAttemptedPages: document.ocrAttemptedPages ?? 0,
+      ocrSucceededPages: document.ocrSucceededPages ?? 0,
+      ocrImprovedPages: document.ocrImprovedPages ?? 0,
+      ocrWarning: document.ocrWarning ?? null,
       createdAt: now,
       updatedAt: now,
     };
@@ -1169,7 +1338,8 @@ export class DatabaseService {
             d.original_file_name AS documentName,
             p.page_number AS pageNumber,
             p.text_content AS textContent,
-            p.text_length AS textLength
+            p.text_length AS textLength,
+            p.text_source AS textSource
           FROM document_pages p
           INNER JOIN source_documents d ON d.id = p.document_id
           WHERE d.subject_id = ? AND d.import_status = 'ready'

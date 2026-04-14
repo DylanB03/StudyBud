@@ -35,6 +35,7 @@ import {
 } from './main/db/database';
 import { summarizeExtractionConfidence } from './main/documents/extraction-confidence';
 import { runImportInUtilityProcess } from './main/documents/import-process';
+import { detectOcrRuntime } from './main/ocr/runtime';
 import { ResearchBrowserController } from './main/research/browser';
 import { searchResearch } from './main/research/search';
 import { applyContentSecurityPolicy } from './main/security/csp';
@@ -376,6 +377,11 @@ const mapDocument = (
     extractedTextLength: extractionSummary.extractedTextLength,
     pagesWithExtractedText: extractionSummary.pagesWithExtractedText,
     extractionState: extractionSummary.extractionState,
+    ocrState: document.ocrState,
+    ocrAttemptedPages: document.ocrAttemptedPages,
+    ocrSucceededPages: document.ocrSucceededPages,
+    ocrImprovedPages: document.ocrImprovedPages,
+    ocrWarning: document.ocrWarning,
     importStatus: document.importStatus as SourceDocumentSummary['importStatus'],
     errorMessage: document.errorMessage,
     createdAt: formatTimestamp(document.createdAt),
@@ -389,6 +395,11 @@ const mapPage = (page: DocumentPageRow): DocumentPageSummary => {
     pageNumber: page.pageNumber,
     textLength: page.textLength,
     textContent: page.textContent,
+    textSource: page.textSource,
+    ocrAttempted: page.ocrAttempted,
+    ocrSucceeded: page.ocrSucceeded,
+    ocrConfidence: page.ocrConfidence,
+    ocrWarning: page.ocrWarning,
     previewText:
       page.textContent.length > 180
         ? `${page.textContent.slice(0, 180).trim()}...`
@@ -402,6 +413,9 @@ const mapJob = (job: JobRow): ImportJobSummary => {
     selectedFiles?: string[];
     importedDocumentIds?: string[];
     failures?: Array<{ fileName: string; reason: string }>;
+    ocrAttemptedCount?: number;
+    ocrImprovedCount?: number;
+    ocrFailedCount?: number;
   };
 
   if (!job.subjectId) {
@@ -418,6 +432,9 @@ const mapJob = (job: JobRow): ImportJobSummary => {
     totalFiles: payload.selectedFiles?.length ?? 0,
     importedCount: payload.importedDocumentIds?.length ?? 0,
     failedCount: payload.failures?.length ?? 0,
+    ocrAttemptedCount: payload.ocrAttemptedCount ?? 0,
+    ocrImprovedCount: payload.ocrImprovedCount ?? 0,
+    ocrFailedCount: payload.ocrFailedCount ?? 0,
     createdAt: formatTimestamp(job.createdAt),
     updatedAt: formatTimestamp(job.updatedAt),
   };
@@ -778,6 +795,7 @@ const registerIpcHandlers = (): void => {
   ipcMain.handle(IPC_CHANNELS.APP_INFO, async (): Promise<AppInfo> => {
     await ensureInitialized();
     const paths = getPathsOrThrow();
+    const ocrRuntime = await detectOcrRuntime({ forceRefresh: true });
     return {
       version: app.getVersion(),
       userDataPath: app.getPath('userData'),
@@ -788,6 +806,11 @@ const registerIpcHandlers = (): void => {
       electronVersion: process.versions.electron,
       runningInWsl: isRunningInWsl(),
       nativeDatabaseReady: Boolean(database),
+      ocrRuntimeAvailable: ocrRuntime.available,
+      ocrEngine: ocrRuntime.engine,
+      ocrRuntimeMessage: ocrRuntime.message,
+      ocrRuntimeMode: ocrRuntime.mode,
+      ocrRuntimePath: ocrRuntime.runtimePath,
     };
   });
 

@@ -99,3 +99,6 @@ homework/
 #other
 .codex
 codex-context.md
+
+#environment
+.venv/

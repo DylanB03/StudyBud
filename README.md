@@ -59,8 +59,8 @@ Implemented roadmap phases:
 - Phase 7: release hardening and UX stabilization
 
 Important limitations:
-- OCR is not implemented
-- scanned/image-only PDFs may import but provide limited AI usefulness
+- OCR fallback is implemented for scanned/weak pages, but local OCR setup is still required in development
+- packaged bundled OCR is Windows-first and not fully produced from this Linux/WSL environment
 - AI quality depends heavily on provider/model choice
 - Windows is the primary intended target
 - running inside WSL works for development but adds extra edge cases
@@ -86,6 +86,7 @@ Main entry points:
 - `src/main/db/database.ts`: persistence layer
 - `src/main/documents/import.ts`: document import pipeline
 - `src/main/pdf/extraction.ts`: PDF text extraction
+- `src/main/ocr/runtime.ts`: OCR runtime resolution and execution
 - `src/main/analysis/subject-analysis.ts`: division analysis
 - `src/main/chat/grounded-chat.ts`: grounded chat
 - `src/main/practice/practice-generation.ts`: practice generation
@@ -114,6 +115,11 @@ Optional research providers:
 - Brave Search API key
 - YouTube Data API key
 
+OCR development requirements:
+- Python 3
+- `tesseract`
+- OCR Python packages from [`resources/ocr/requirements.txt`](./resources/ocr/requirements.txt)
+
 ## Install
 
 From the repo root:
@@ -121,6 +127,22 @@ From the repo root:
 ```bash
 npm install
 ```
+
+If you want OCR to work in development, create the local OCR virtualenv and install its dependencies:
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -r resources/ocr/requirements.txt
+```
+
+On Ubuntu/WSL, install Tesseract too:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y tesseract-ocr
+```
+
+After that, StudyBud will prefer the repo-local `.venv` for OCR automatically.
 
 If native dependencies need repair for Node-side tests:
 
@@ -157,6 +179,14 @@ Installer/make step:
 ```bash
 npm run make
 ```
+
+Windows OCR runtime build:
+
+```bash
+npm run build:ocr:win
+```
+
+This is the Windows-first step that freezes the OCR helper into a bundled runtime for packaged builds.
 
 ## Verification Commands
 
@@ -231,6 +261,8 @@ Inside a subject workspace:
 
 StudyBud copies imported files into its own managed data directory and extracts page text/chunks for later AI use.
 
+If a page has weak or missing native text, StudyBud can automatically OCR only those flagged pages during import and store the improved text back into the same page/chunk pipeline.
+
 ### Review Imported Documents
 
 After import you can:
@@ -240,6 +272,13 @@ After import you can:
 - remove failed/unwanted documents
 
 If a PDF is scanned or image-only, the app may warn that text extraction is limited.
+
+If OCR is available, StudyBud will try to improve only the weak pages instead of OCRing the whole document.
+
+You can tell what happened from the UI:
+- document badges like `ocr used`, `ocr partial`, or `ocr unavailable`
+- page-level labels like `OCR text`, `Merged text`, or `Native text`
+- analysis surfaces such as `Unassigned Pages`, which now also show the text source for those pages
 
 ### Run Subject Analysis
 
@@ -348,6 +387,33 @@ StudyBud stores:
 
 The app supports a configurable data path from Settings.
 
+## OCR Notes
+
+StudyBud now supports OCR as an import-stage enhancement.
+
+How it works:
+- normal PDF text extraction runs first
+- only weak/scanned pages are flagged for OCR
+- OCR results are stored back into the same document pages/chunks used by analysis, chat, practice, and citations
+
+Current OCR behavior:
+- development mode uses the Python OCR fallback in [`resources/ocr/ocr_runner.py`](./resources/ocr/ocr_runner.py)
+- the app prefers a repo-local `.venv` if present
+- packaged-mode bundled OCR is Windows-first and is expected under [`resources/ocr-runtime`](./resources/ocr-runtime)
+
+Current Python OCR stack:
+- `PyMuPDF`
+- `pytesseract`
+- system `tesseract`
+
+Development OCR sanity check:
+
+```bash
+.venv/bin/python resources/ocr/ocr_runner.py --status
+```
+
+Expected healthy output is a JSON object with `"available": true`.
+
 ## WSL Notes
 
 StudyBud is Windows-first, but development often happens inside WSL.
@@ -398,7 +464,18 @@ Check:
 That usually means:
 - the PDF is scanned/image-only
 - extraction was limited
-- AI features for that file will be incomplete until OCR exists
+- OCR is not available in the current environment
+- OCR ran but the page still had limited recoverable text
+
+Check OCR setup with:
+
+```bash
+.venv/bin/python resources/ocr/ocr_runner.py --status
+```
+
+If it says `fitz` is missing, install the OCR requirements into `.venv`.
+
+If it says `tesseract` is unavailable, install `tesseract-ocr` and restart the app.
 
 ## Release / Demo Notes
 
