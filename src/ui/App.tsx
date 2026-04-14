@@ -24,6 +24,8 @@ import type {
 import { CitationPreviewCard } from './CitationPreviewCard';
 import { DivisionChatPanel } from './DivisionChatPanel';
 import { DismissibleBanner } from './DismissibleBanner';
+import { NotificationCenter } from './NotificationCenter';
+import type { AppNotification } from './NotificationCenter';
 import { PracticePanel } from './PracticePanel';
 import { ResearchPanel } from './ResearchPanel';
 import { SelectionAskChip } from './SelectionAskChip';
@@ -36,7 +38,8 @@ const PdfViewer = lazy(async () => {
   };
 });
 
-type View = 'library' | 'workspace' | 'settings';
+type View = 'library' | 'workspace' | 'units' | 'settings';
+type UnitsSidebarTab = 'units' | 'documents' | 'flashcards';
 
 type ActiveAnalysisState = {
   provider: string;
@@ -73,6 +76,7 @@ const WORKSPACE_MAIN_MIN_WIDTH = 460;
 const WORKSPACE_RESIZER_WIDTH = 10;
 const WORKSPACE_GAP_TOTAL = 54;
 const LAST_WORKSPACE_SUBJECT_STORAGE_KEY = 'studybud.lastWorkspaceSubjectId';
+const LAST_UNIT_BY_SUBJECT_STORAGE_KEY = 'studybud.lastUnitBySubject';
 
 const initialSettings: SettingsState = {
   aiProvider: 'openai',
@@ -292,6 +296,10 @@ const initialResearchBrowserState: ResearchBrowserState = {
   contentKind: 'web',
 };
 
+const createNotificationId = (): string => {
+  return `notification-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+};
+
 const hasMeaningfulSelection = (): boolean => {
   return (window.getSelection()?.toString().trim().length ?? 0) > 0;
 };
@@ -365,8 +373,10 @@ export const App = () => {
     useState<ResearchBrowserState>(initialResearchBrowserState);
   const [researchBrowserUrlInput, setResearchBrowserUrlInput] = useState('');
   const [isOnline, setIsOnline] = useState<boolean>(getNavigatorOnline);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [isUnassignedPagesExpanded, setIsUnassignedPagesExpanded] = useState(false);
   const [isPageTextExpanded, setIsPageTextExpanded] = useState(false);
+  const [unitsSidebarTab, setUnitsSidebarTab] = useState<UnitsSidebarTab>('units');
   const [chatPanelWidth, setChatPanelWidth] = useState<number>(() => {
     if (typeof window === 'undefined') {
       return DEFAULT_CHAT_PANEL_WIDTH;
@@ -391,6 +401,20 @@ export const App = () => {
       return window.localStorage.getItem(LAST_WORKSPACE_SUBJECT_STORAGE_KEY);
     },
   );
+  const [lastUnitBySubject, setLastUnitBySubject] = useState<Record<string, string>>(
+    () => {
+      if (typeof window === 'undefined') {
+        return {};
+      }
+
+      try {
+        const stored = window.localStorage.getItem(LAST_UNIT_BY_SUBJECT_STORAGE_KEY);
+        return stored ? (JSON.parse(stored) as Record<string, string>) : {};
+      } catch {
+        return {};
+      }
+    },
+  );
   const [isResizingChatPanel, setIsResizingChatPanel] = useState(false);
   const [busy, setBusy] = useState(false);
   const [pendingChatPrompt, setPendingChatPrompt] = useState<string | null>(null);
@@ -407,7 +431,7 @@ export const App = () => {
   const currentDivision =
     workspace?.analysis?.divisions.find(
       (division) => division.id === selectedDivisionId,
-    ) ?? workspace?.analysis?.divisions[0] ?? null;
+    ) ?? null;
 
   useEffect(() => {
     if (!studybud) {
@@ -534,6 +558,17 @@ export const App = () => {
 
     window.localStorage.removeItem(LAST_WORKSPACE_SUBJECT_STORAGE_KEY);
   }, [lastWorkspaceSubjectId]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    window.localStorage.setItem(
+      LAST_UNIT_BY_SUBJECT_STORAGE_KEY,
+      JSON.stringify(lastUnitBySubject),
+    );
+  }, [lastUnitBySubject]);
 
   useEffect(() => {
     const activeWorkspaceSubjectId = workspace?.subject.id ?? null;
@@ -807,9 +842,61 @@ export const App = () => {
         return previous;
       }
 
-      return divisions[0]?.id ?? null;
+      return null;
     });
   }, [workspace?.analysis]);
+
+  const pushNotification = (input: {
+    title: string;
+    message: string;
+    variant: AppNotification['variant'];
+    id?: string;
+    actionLabel?: string;
+    onAction?: (() => void) | null;
+  }) => {
+    const nextNotification: AppNotification = {
+      id: input.id ?? createNotificationId(),
+      title: input.title,
+      message: input.message,
+      variant: input.variant,
+      createdAt: Date.now(),
+      actionLabel: input.actionLabel,
+      onAction: input.onAction ?? null,
+    };
+
+    setNotifications((previous) => {
+      const filtered = input.id
+        ? previous.filter((notification) => notification.id !== input.id)
+        : previous;
+      return [nextNotification, ...filtered];
+    });
+  };
+
+  const dismissNotification = (id: string) => {
+    setNotifications((previous) =>
+      previous.filter((notification) => notification.id !== id),
+    );
+  };
+
+  useEffect(() => {
+    if (!error) {
+      return;
+    }
+
+    const notification: AppNotification = {
+      id: `app-error:${error}`,
+      title: 'Action failed',
+      message: error,
+      variant: 'error',
+      createdAt: Date.now(),
+      onAction: null,
+    };
+
+    setNotifications((previous) => [
+      notification,
+      ...previous.filter((item) => item.id !== notification.id),
+    ]);
+  }, [error]);
 
   useEffect(() => {
     setChatInput('');
@@ -982,7 +1069,13 @@ export const App = () => {
     };
   }, [documentBytesCache, selectedDivisionId, studybud, workspace]);
 
-  const refreshSubjectWorkspace = async (subjectId: string, preferredDocumentId?: string) => {
+  const refreshSubjectWorkspace = async (
+    subjectId: string,
+    preferredDocumentId?: string,
+    options?: {
+      view?: 'auto' | 'workspace' | 'units';
+    },
+  ) => {
     if (!studybud) {
       return;
     }
@@ -999,9 +1092,29 @@ export const App = () => {
         ),
       );
       setLastWorkspaceSubjectId(nextWorkspace.subject.id);
-      setActiveView('workspace');
       setSelectedCitationKey(null);
       setResearchError(null);
+
+      const rememberedUnitId = lastUnitBySubject[nextWorkspace.subject.id] ?? null;
+      const nextSelectedUnitId =
+        rememberedUnitId &&
+        nextWorkspace.analysis?.divisions.some((division) => division.id === rememberedUnitId)
+          ? rememberedUnitId
+          : null;
+      const hasUnits = (nextWorkspace.analysis?.divisions.length ?? 0) > 0;
+
+      setSelectedDivisionId(nextSelectedUnitId);
+      setActiveView(
+        options?.view === 'workspace'
+          ? 'workspace'
+          : options?.view === 'units'
+            ? 'units'
+            : nextSelectedUnitId
+              ? 'workspace'
+              : hasUnits
+                ? 'units'
+                : 'workspace',
+      );
 
       const nextDocumentId =
         preferredDocumentId && nextWorkspace.documents.some((document) => document.id === preferredDocumentId)
@@ -1032,25 +1145,47 @@ export const App = () => {
       return;
     }
 
-    await refreshSubjectWorkspace(subjectId);
+    await refreshSubjectWorkspace(subjectId, undefined, { view: 'auto' });
   };
 
-  const openCitationSourcePage = (citation: CitationRef) => {
+  const handleOpenUnitsPage = () => {
+    if (!workspace) {
+      return;
+    }
+
+    setUnitsSidebarTab('units');
+    setActiveView('units');
+  };
+
+  const selectCitationSourcePage = (
+    citation: CitationRef,
+    options?: {
+      scrollToViewer?: boolean;
+    },
+  ) => {
     pendingPageSelectionRef.current = citation.pageNumber;
     setSelectedCitationKey(getCitationKey(citation));
     setSelectedDocumentId(citation.documentId);
     setSelectedPageNumber(citation.pageNumber);
 
-    requestAnimationFrame(() => {
-      const viewerSection = pdfViewerSectionRef.current;
-      if (!viewerSection) {
-        return;
-      }
+    if (options?.scrollToViewer ?? true) {
+      requestAnimationFrame(() => {
+        const viewerSection = pdfViewerSectionRef.current;
+        if (!viewerSection) {
+          return;
+        }
 
-      viewerSection.scrollIntoView({
-        behavior: 'smooth',
-        block: 'start',
+        viewerSection.scrollIntoView({
+          behavior: 'smooth',
+          block: 'start',
+        });
       });
+    }
+  };
+
+  const openCitationSourcePage = (citation: CitationRef) => {
+    selectCitationSourcePage(citation, {
+      scrollToViewer: true,
     });
   };
 
@@ -1339,9 +1474,24 @@ export const App = () => {
     }
 
     setSelectedDivisionId(division.id);
+    setLastUnitBySubject((previous) => {
+      if (workspace?.subject.id && previous[workspace.subject.id] === division.id) {
+        return previous;
+      }
+
+      return workspace?.subject.id
+        ? {
+            ...previous,
+            [workspace.subject.id]: division.id,
+          }
+        : previous;
+    });
+    setActiveView('workspace');
 
     if (division.sourcePages.length > 0) {
-      openCitationSourcePage(division.sourcePages[0]);
+      selectCitationSourcePage(division.sourcePages[0], {
+        scrollToViewer: false,
+      });
     }
   };
 
@@ -1401,6 +1551,16 @@ export const App = () => {
       if (lastWorkspaceSubjectId === subject.id) {
         setLastWorkspaceSubjectId(null);
       }
+
+      setLastUnitBySubject((previous) => {
+        if (!(subject.id in previous)) {
+          return previous;
+        }
+
+        const next = { ...previous };
+        delete next[subject.id];
+        return next;
+      });
 
       if (workspace?.subject.id === subject.id) {
         setWorkspace(null);
@@ -1611,8 +1771,21 @@ export const App = () => {
 
       await refreshSubjectWorkspace(workspace.subject.id, preferredDocument?.id);
 
-      if (result.failures.length > 0 && result.job) {
-        setError(result.job.message);
+      if (result.job) {
+        const importedCount = result.importedDocuments.filter(
+          (document) => document.importStatus === 'ready',
+        ).length;
+        const hasFailures = result.failures.length > 0;
+        pushNotification({
+          id: `import-job:${result.job.id}`,
+          title: hasFailures ? 'Import completed with issues' : 'Import complete',
+          message:
+            result.job.message ||
+            (hasFailures
+              ? `${result.failures.length} document${result.failures.length === 1 ? '' : 's'} failed to import.`
+              : `${importedCount} document${importedCount === 1 ? '' : 's'} imported successfully.`),
+          variant: hasFailures ? 'warning' : 'success',
+        });
       }
     } catch (caughtError) {
       setError(
@@ -1670,6 +1843,12 @@ export const App = () => {
       );
 
       await refreshSubjectWorkspace(workspace.subject.id, selectedDocumentId ?? undefined);
+      pushNotification({
+        id: `analysis-job:${result.job.id}`,
+        title: 'Analysis successful',
+        message: result.job.message,
+        variant: 'success',
+      });
     } catch (caughtError) {
       const message =
         caughtError instanceof Error
@@ -1969,7 +2148,7 @@ export const App = () => {
       const message =
         caughtError instanceof Error
           ? caughtError.message
-          : 'Could not send the division chat request.';
+          : 'Could not send the unit chat request.';
       setChatError(message);
       setError(message);
     } finally {
@@ -1993,7 +2172,7 @@ export const App = () => {
     }
 
     await submitChatPrompt(
-      'Explain how to approach this practice question and which division concepts it is testing.',
+      'Explain how to approach this practice question and which unit concepts it is testing.',
       {
         kind: 'practice-question',
         subjectId: workspace.subject.id,
@@ -2326,6 +2505,11 @@ export const App = () => {
     settings.aiProvider === 'ollama'
       ? 'Configure an Ollama model in Settings before running analysis, chat, or practice generation.'
       : 'Add your OpenAI API key in Settings before running analysis, chat, or practice generation.';
+  const unitSelectionBlockedReason = !analysisReady
+    ? aiActionBlockedReason
+    : !currentDivision
+      ? 'Open a unit from the Units page before asking questions about selected text.'
+      : null;
   const aiDiagnosticsStatus =
     settings.aiProvider === 'ollama'
       ? `${settings.ollamaModel.trim() || 'No model set'} @ ${
@@ -2348,6 +2532,48 @@ export const App = () => {
       ? `${appInfo.ocrEngine ?? 'OCR runtime ready'} (${appInfo.ocrRuntimeMode})`
       : appInfo.ocrRuntimeMessage ?? 'OCR runtime unavailable'
     : 'Loading...';
+  const contextualNotifications: AppNotification[] = [];
+
+  if (workspace) {
+    const extractionLimitedDocuments = workspace.documents.filter(
+      (document) =>
+        document.importStatus === 'ready' && document.extractionState !== 'normal',
+    );
+
+    if (extractionLimitedDocuments.length > 0) {
+      const extractionNotificationCreatedAt = extractionLimitedDocuments.reduce(
+        (latest, document) =>
+          Math.max(latest, new Date(document.updatedAt).getTime()),
+        0,
+      );
+      contextualNotifications.push({
+        id: `workspace-extraction-limited:${workspace.subject.id}:${extractionLimitedDocuments
+          .map((document) => `${document.id}:${document.extractionState}`)
+          .join('|')}`,
+        title: 'Documents imported with limited text',
+        message:
+          extractionLimitedDocuments.length === 1
+            ? `${extractionLimitedDocuments[0]?.originalFileName} imported with ${extractionLimitedDocuments[0]?.extractionState === 'image-only' ? 'no extracted text' : 'limited extracted text'}. StudyBud will keep the file, but AI features may be incomplete for that document.`
+            : `${extractionLimitedDocuments.length} imported documents have limited or missing extracted text. These are often scanned or image-only PDFs, so AI features may be incomplete for those files.`,
+        variant: 'warning',
+        createdAt: extractionNotificationCreatedAt || Date.now(),
+        onAction: null,
+      });
+    }
+
+    if (workspace.analysis?.unassignedPages.length) {
+      const latestAnalysisTimestamp =
+        workspace.analysisJobs[0]?.updatedAt ?? workspace.analysisJobs[0]?.createdAt ?? null;
+      contextualNotifications.push({
+        id: `workspace-unassigned-pages:${workspace.subject.id}:${workspace.analysis.unassignedPages.length}`,
+        title: 'Analysis left pages unassigned',
+        message: `The latest analysis left ${workspace.analysis.unassignedPages.length} page${workspace.analysis.unassignedPages.length === 1 ? '' : 's'} unassigned, so some unit coverage may still be incomplete.`,
+        variant: 'warning',
+        createdAt: latestAnalysisTimestamp ? new Date(latestAnalysisTimestamp).getTime() : Date.now(),
+        onAction: null,
+      });
+    }
+  }
 
   const renderLibrary = () => {
     return (
@@ -2776,7 +3002,7 @@ export const App = () => {
     const selectedDivision =
       workspace.analysis?.divisions.find(
         (division) => division.id === selectedDivisionId,
-      ) ?? workspace.analysis?.divisions[0] ?? null;
+      ) ?? null;
     const selectedCitation =
       selectedDivision?.sourcePages.find(
         (citation) => getCitationKey(citation) === selectedCitationKey,
@@ -2803,15 +3029,11 @@ export const App = () => {
     const divisionPracticeSets = (workspace.practiceSets ?? []).filter(
       (practiceSet) => practiceSet.divisionId === selectedDivision?.id,
     );
-    const latestAnalysisJob = workspace.analysisJobs[0] ?? null;
-    const extractionLimitedDocuments = workspace.documents.filter(
-      (document) =>
-        document.importStatus === 'ready' && document.extractionState !== 'normal',
-    );
-    const lowConfidenceAnalysis =
-      workspace.analysis &&
-      (workspace.analysis.unassignedPages.length > 0 ||
-        extractionLimitedDocuments.length > 0);
+    const unitActionBlockedReason = !analysisReady
+      ? aiActionBlockedReason
+      : !selectedDivision
+        ? 'Open a unit from the Units page before using chat or practice tools.'
+        : null;
     const practiceGenerationReady =
       analysisReady &&
       Boolean(selectedDivision) &&
@@ -2853,6 +3075,13 @@ export const App = () => {
             <button
               type="button"
               className="ghost-button"
+              onClick={handleOpenUnitsPage}
+            >
+              See Units
+            </button>
+            <button
+              type="button"
+              className="ghost-button"
               onClick={() => void handleAnalyzeSubject()}
               disabled={
                 busy ||
@@ -2869,201 +3098,15 @@ export const App = () => {
           ref={workspaceGridRef}
           className="workspace-grid workspace-grid-resizable"
           style={{
-            gridTemplateColumns: `280px minmax(0, 1fr) ${WORKSPACE_RESIZER_WIDTH}px ${chatPanelWidth}px`,
+            gridTemplateColumns: `minmax(0, 1fr) ${WORKSPACE_RESIZER_WIDTH}px ${chatPanelWidth}px`,
           }}
         >
-          <aside className="workspace-sidebar">
-            <section className="sidebar-section">
-              <div className="sidebar-section-title">
-                <h3>Divisions</h3>
-                <span>{workspace.analysis?.divisions.length ?? 0}</span>
-              </div>
-
-              {!workspace.analysis || workspace.analysis.divisions.length === 0 ? (
-                <div className="empty-state">
-                  Run analysis to create study divisions for this subject.
-                </div>
-              ) : (
-                <div className="division-nav-list">
-                  {workspace.analysis.divisions.map((division) => (
-                    <button
-                      key={division.id}
-                      type="button"
-                      className={`division-nav-button${
-                        selectedDivision?.id === division.id ? ' active' : ''
-                      }`}
-                      onClick={() => handleSelectDivision(division)}
-                    >
-                      <div className="division-nav-copy">
-                        <strong onMouseUp={() => handleDivisionListSelection(division)}>
-                          {division.title}
-                        </strong>
-                        <p
-                          className="division-nav-summary"
-                          onMouseUp={() => handleDivisionListSelection(division)}
-                        >
-                          {division.summary}
-                        </p>
-                      </div>
-                      <span className="division-nav-count">
-                        {division.sourcePages.length} page
-                        {division.sourcePages.length === 1 ? '' : 's'}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </section>
-
-            <section className="sidebar-section">
-              <div className="sidebar-section-title">
-                <h3>Documents</h3>
-                <span>
-                  {workspace.documents.length}
-                  {extractionLimitedDocuments.length > 0
-                    ? ` • ${extractionLimitedDocuments.length} flagged`
-                    : ''}
-                </span>
-              </div>
-
-              {workspace.documents.length === 0 ? (
-                <div className="empty-state">
-                  No PDFs imported yet. Use the import buttons above to add
-                  lecture or homework documents.
-                </div>
-              ) : (
-                <div className="document-list document-groups">
-                  {(['lecture', 'homework'] as const).map((kind) => {
-                    const groupedDocuments = workspace.documents.filter(
-                      (document) => document.kind === kind,
-                    );
-
-                    if (groupedDocuments.length === 0) {
-                      return null;
-                    }
-
-                    return (
-                      <section key={kind} className="document-group">
-                        <div className="document-group-header">
-                          <h4>{kind === 'lecture' ? 'Lectures' : 'Homework'}</h4>
-                          <span>{groupedDocuments.length}</span>
-                        </div>
-
-                        <div className="document-group-list">
-                          {groupedDocuments.map((document) => (
-                            <article
-                              key={document.id}
-                              className={`document-card-shell${
-                                selectedDocumentId === document.id ? ' active' : ''
-                              }`}
-                            >
-                              <button
-                                type="button"
-                                className="document-card"
-                                onClick={() => {
-                                  pendingPageSelectionRef.current = null;
-                                  setSelectedDocumentId(document.id);
-                                }}
-                              >
-                                <div className="document-card-header">
-                                  <strong>{document.originalFileName}</strong>
-                                  <div className="analysis-chip-list">
-                                    <span className={`pill pill-${document.kind}`}>
-                                      {document.kind}
-                                    </span>
-                                    {getDocumentOcrBadgeLabel(document.ocrState) ? (
-                                      <span className="pill pill-ocr">
-                                        {getDocumentOcrBadgeLabel(document.ocrState)}
-                                      </span>
-                                    ) : null}
-                                    {document.importStatus === 'ready' &&
-                                    document.extractionState !== 'normal' ? (
-                                      <span
-                                        className={`pill pill-${
-                                          document.extractionState === 'image-only'
-                                            ? 'image-only'
-                                            : 'limited'
-                                        }`}
-                                      >
-                                        {document.extractionState === 'image-only'
-                                          ? 'image-only'
-                                          : 'limited text'}
-                                      </span>
-                                    ) : null}
-                                  </div>
-                                </div>
-                                <span className="document-card-meta">
-                                  {document.importStatus === 'ready'
-                                    ? `${document.pageCount} pages • ${document.pagesWithExtractedText}/${document.pageCount} with text${
-                                        document.ocrImprovedPages > 0
-                                          ? ` • OCR improved ${document.ocrImprovedPages}`
-                                          : ''
-                                      }`
-                                    : 'Import failed'}
-                                </span>
-                                {document.importStatus === 'ready' &&
-                                getDocumentOcrWarningMessage(document) ? (
-                                  <span className="document-card-error">
-                                    {getDocumentOcrWarningMessage(document)}
-                                  </span>
-                                ) : null}
-                                {document.importStatus === 'ready' &&
-                                document.extractionState !== 'normal' ? (
-                                  <span className="document-card-error">
-                                    {document.extractionState === 'image-only'
-                                      ? 'Scanned/image-only PDF likely'
-                                      : 'Only limited text was extracted'}
-                                  </span>
-                                ) : null}
-                                {document.errorMessage ? (
-                                  <span className="document-card-error">
-                                    {document.errorMessage}
-                                  </span>
-                                ) : null}
-                              </button>
-                              <button
-                                type="button"
-                                className="document-delete-button"
-                                disabled={busy}
-                                onClick={() => void handleDeleteDocument(document.id)}
-                              >
-                                Delete
-                              </button>
-                            </article>
-                          ))}
-                        </div>
-                      </section>
-                    );
-                  })}
-                </div>
-              )}
-            </section>
-          </aside>
-
           <section className="workspace-main">
             <section className="analysis-panel">
               <div className="sidebar-section-title">
-                <h3>Division Workspace</h3>
-                <span>{workspace.analysis?.divisions.length ?? 0}</span>
+                <h3>Subject Workspace</h3>
+                <span>{workspace.analysis?.divisions.length ?? 0} units</span>
               </div>
-
-              {latestAnalysisJob ? (
-                <div className="analysis-job-banner">
-                  <div className="analysis-job-copy">
-                    <strong>{latestAnalysisJob.message}</strong>
-                    <div className="analysis-job-meta">
-                      <span>{latestAnalysisJob.provider}</span>
-                      <span>{latestAnalysisJob.model}</span>
-                      <span>
-                        Started {formatDate(latestAnalysisJob.createdAt)}
-                      </span>
-                    </div>
-                  </div>
-                  <span className={`pill pill-status-${latestAnalysisJob.status}`}>
-                    {latestAnalysisJob.status}
-                  </span>
-                </div>
-              ) : null}
 
               {activeAnalysis ? (
                 <div className="analysis-job-banner">
@@ -3095,18 +3138,6 @@ export const App = () => {
                   }
                 >
                   <span>{analysisError}</span>
-                </DismissibleBanner>
-              ) : null}
-
-              {extractionLimitedDocuments.length > 0 ? (
-                <DismissibleBanner
-                  dismissKey={`extraction-limited:${workspace.subject.id}:${extractionLimitedDocuments
-                    .map((document) => `${document.id}:${document.extractionState}`)
-                    .join('|')}`}
-                >
-                  {extractionLimitedDocuments.length === 1
-                    ? `${extractionLimitedDocuments[0]?.originalFileName} imported with ${extractionLimitedDocuments[0]?.extractionState === 'image-only' ? 'no extracted text' : 'limited extracted text'}. StudyBud will keep the file, but AI features may be incomplete for that document.`
-                    : `${extractionLimitedDocuments.length} imported documents have limited or missing extracted text. These are often scanned/image-only PDFs, so AI features may be incomplete for those files.`}
                 </DismissibleBanner>
               ) : null}
 
@@ -3148,24 +3179,14 @@ export const App = () => {
                 </div>
               ) : !workspace.analysis ? (
                 <div className="empty-state">
-                  Analyze this subject to extract divisions, key concepts, and problem types from the imported lecture and homework PDFs.
+                  Analyze this subject to extract units, key concepts, and problem types from the imported lecture and homework PDFs.
                 </div>
               ) : !selectedDivision ? (
                 <div className="empty-state">
-                  Select a division from the left to inspect its summary and cited source pages.
+                  Open `See Units` to choose a unit, then return here to study it in depth.
                 </div>
               ) : (
                 <div className="division-workspace">
-                  {lowConfidenceAnalysis ? (
-                    <DismissibleBanner
-                      dismissKey={`low-confidence-analysis:${workspace.subject.id}:${workspace.analysis.unassignedPages.length}:${extractionLimitedDocuments.length}`}
-                    >
-                      {workspace.analysis.unassignedPages.length > 0
-                        ? `The latest analysis left ${workspace.analysis.unassignedPages.length} page${workspace.analysis.unassignedPages.length === 1 ? '' : 's'} unassigned, so some division coverage may still be incomplete.`
-                        : 'Some imported documents had limited extracted text, so the latest analysis may be less complete than usual.'}
-                    </DismissibleBanner>
-                  ) : null}
-
                   <article className="analysis-division-card division-focus-card">
                     <div className="analysis-division-header">
                       <div>
@@ -3198,7 +3219,7 @@ export const App = () => {
                       <div className="analysis-problem-list">
                         {selectedDivision.problemTypes.length === 0 ? (
                           <p className="analysis-muted">
-                            No clear problem types were detected for this division yet.
+                            No clear problem types were detected for this unit yet.
                           </p>
                         ) : (
                           selectedDivision.problemTypes.map((problemType) => (
@@ -3246,12 +3267,16 @@ export const App = () => {
                     canGenerate={!practiceBusy && !busy && practiceGenerationReady}
                     generateBusy={practiceBusy}
                     chatBusy={chatBusy}
-                    aiActionsEnabled={analysisReady}
-                    disabledReason={!analysisReady ? aiActionBlockedReason : null}
+                    aiActionsEnabled={!unitActionBlockedReason}
+                    disabledReason={unitActionBlockedReason}
                     errorMessage={practiceError}
                     onRetryGenerate={
                       lastPracticeRequest ? () => void handleRetryPractice() : null
                     }
+                    heading="Practice Studio"
+                    generateHelperText="Generated sets stay saved under this unit, and each answer key can be revealed only when you want it."
+                    emptyStateWithoutProblemTypes="Analyze more material or refine this unit before generating practice."
+                    emptyStateWithoutSets="No saved practice sets for this unit yet. Generate a set from one of the detected problem types above."
                   />
 
                   {selectedCitation ? (
@@ -3287,7 +3312,7 @@ export const App = () => {
 
                     {selectedDivision.sourcePages.length === 0 ? (
                       <div className="empty-state">
-                        No cited pages were available for this division.
+                        No cited pages were available for this unit.
                       </div>
                     ) : (
                       <div className="citation-grid">
@@ -3313,7 +3338,7 @@ export const App = () => {
                         <div>
                           <h4>Unassigned Pages</h4>
                           <p>
-                            These pages did not clearly fit a division in the latest pass.
+                            These pages did not clearly fit a unit in the latest pass.
                           </p>
                         </div>
                         <span className="analysis-count-pill">
@@ -3550,8 +3575,6 @@ export const App = () => {
                 onChatInputChange={setChatInput}
                 onSubmit={() => void handleAskChat()}
                 chatBusy={chatBusy}
-                aiActionsEnabled={analysisReady}
-                disabledReason={!analysisReady ? aiActionBlockedReason : null}
                 errorMessage={chatError}
                 onRetry={lastChatRequest ? () => void handleRetryChat() : null}
                 pendingPrompt={pendingChatPrompt}
@@ -3563,6 +3586,12 @@ export const App = () => {
                 onSelectMessageText={handleChatMessageSelection}
                 activeCitationKey={selectedCitationKey}
                 documentBytesCache={documentBytesCache}
+                heading="Unit Chat"
+                emptyStateMessage="Ask a question about this unit, or highlight text in the summary or extracted page text and ask for clarification."
+                submitLabel="Ask Unit Chat"
+                placeholder="Ask a question about this unit..."
+                disabledReason={unitActionBlockedReason}
+                aiActionsEnabled={!unitActionBlockedReason}
               />
             ) : (
               <ResearchPanel
@@ -3624,9 +3653,280 @@ export const App = () => {
     );
   };
 
+  const renderUnitsPage = () => {
+    if (!workspace) {
+      return (
+        <section className="panel">
+          <div className="empty-state">Open a subject to view its units.</div>
+        </section>
+      );
+    }
+
+    const units = workspace.analysis?.divisions ?? [];
+    const selectedUnit =
+      units.find((division) => division.id === selectedDivisionId) ?? null;
+
+    return (
+      <section className="panel subject-page-panel">
+        <div className="subject-page-shell">
+          <aside className="subject-page-sidebar">
+            <h2>{workspace.subject.name}</h2>
+            <p className="subtitle">Subject navigation</p>
+
+            <nav className="nav-list subject-page-nav">
+              <button
+                type="button"
+                className={unitsSidebarTab === 'units' ? 'active' : ''}
+                onClick={() => setUnitsSidebarTab('units')}
+              >
+                Units
+              </button>
+              <button
+                type="button"
+                className={unitsSidebarTab === 'documents' ? 'active' : ''}
+                onClick={() => setUnitsSidebarTab('documents')}
+              >
+                Documents
+              </button>
+              <button
+                type="button"
+                className={unitsSidebarTab === 'flashcards' ? 'active' : ''}
+                onClick={() => setUnitsSidebarTab('flashcards')}
+              >
+                Flashcards
+              </button>
+              <button
+                type="button"
+                className="ghost-button"
+                disabled={!selectedDivisionId}
+                onClick={() => setActiveView('workspace')}
+              >
+                Back To Subject
+              </button>
+            </nav>
+          </aside>
+
+          <section className="subject-page-content">
+            <header className="workspace-header">
+              <div>
+                <button
+                  type="button"
+                  className="ghost-button"
+                  onClick={() => {
+                    setActiveView('library');
+                  }}
+                >
+                  Back To Library
+                </button>
+                <h2>{workspace.subject.name}</h2>
+                <p>
+                  Review all analyzed units for this subject and open one to enter the
+                  study workspace.
+                </p>
+              </div>
+            </header>
+
+            {unitsSidebarTab === 'documents' ? (
+              <section className="analysis-panel">
+                <div className="sidebar-section-title">
+                  <h3>Documents</h3>
+                  <span>{workspace.documents.length}</span>
+                </div>
+                <p className="analysis-muted">
+                  Open a document to bring it into the subject workspace, or delete
+                  documents you no longer want attached to this subject.
+                </p>
+
+                {workspace.documents.length === 0 ? (
+                  <div className="empty-state">
+                    No PDFs imported yet. Use the import buttons from the subject
+                    workspace to add lecture or homework documents.
+                  </div>
+                ) : (
+                  <div className="document-list document-groups">
+                    {(['lecture', 'homework'] as const).map((kind) => {
+                      const groupedDocuments = workspace.documents.filter(
+                        (document) => document.kind === kind,
+                      );
+
+                      if (groupedDocuments.length === 0) {
+                        return null;
+                      }
+
+                      return (
+                        <section key={kind} className="document-group">
+                          <div className="document-group-header">
+                            <h4>{kind === 'lecture' ? 'Lectures' : 'Homework'}</h4>
+                            <span>{groupedDocuments.length}</span>
+                          </div>
+
+                          <div className="document-group-list">
+                            {groupedDocuments.map((document) => (
+                              <article
+                                key={document.id}
+                                className={`document-card-shell${
+                                  selectedDocumentId === document.id ? ' active' : ''
+                                }`}
+                              >
+                                <button
+                                  type="button"
+                                  className="document-card"
+                                  onClick={() => {
+                                    pendingPageSelectionRef.current = null;
+                                    setSelectedDocumentId(document.id);
+                                    setActiveView('workspace');
+                                  }}
+                                >
+                                  <div className="document-card-header">
+                                    <strong>{document.originalFileName}</strong>
+                                    <div className="analysis-chip-list">
+                                      <span className={`pill pill-${document.kind}`}>
+                                        {document.kind}
+                                      </span>
+                                      {getDocumentOcrBadgeLabel(document.ocrState) ? (
+                                        <span className="pill pill-ocr">
+                                          {getDocumentOcrBadgeLabel(document.ocrState)}
+                                        </span>
+                                      ) : null}
+                                      {document.importStatus === 'ready' &&
+                                      document.extractionState !== 'normal' ? (
+                                        <span
+                                          className={`pill pill-${
+                                            document.extractionState === 'image-only'
+                                              ? 'image-only'
+                                              : 'limited'
+                                          }`}
+                                        >
+                                          {document.extractionState === 'image-only'
+                                            ? 'image-only'
+                                            : 'limited text'}
+                                        </span>
+                                      ) : null}
+                                    </div>
+                                  </div>
+                                  <span className="document-card-meta">
+                                    {document.importStatus === 'ready'
+                                      ? `${document.pageCount} pages • ${document.pagesWithExtractedText}/${document.pageCount} with text${
+                                          document.ocrImprovedPages > 0
+                                            ? ` • OCR improved ${document.ocrImprovedPages}`
+                                            : ''
+                                        }`
+                                      : 'Import failed'}
+                                  </span>
+                                  {document.importStatus === 'ready' &&
+                                  getDocumentOcrWarningMessage(document) ? (
+                                    <span className="document-card-error">
+                                      {getDocumentOcrWarningMessage(document)}
+                                    </span>
+                                  ) : null}
+                                  {document.importStatus === 'ready' &&
+                                  document.extractionState !== 'normal' ? (
+                                    <span className="document-card-error">
+                                      {document.extractionState === 'image-only'
+                                        ? 'Scanned/image-only PDF likely'
+                                        : 'Only limited text was extracted'}
+                                    </span>
+                                  ) : null}
+                                  {document.errorMessage ? (
+                                    <span className="document-card-error">
+                                      {document.errorMessage}
+                                    </span>
+                                  ) : null}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="document-delete-button"
+                                  disabled={busy}
+                                  onClick={() => void handleDeleteDocument(document.id)}
+                                >
+                                  Delete
+                                </button>
+                              </article>
+                            ))}
+                          </div>
+                        </section>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+            ) : unitsSidebarTab === 'flashcards' ? (
+              <section className="analysis-panel">
+                <div className="sidebar-section-title">
+                  <h3>Flashcards</h3>
+                  <span>soon</span>
+                </div>
+                <div className="empty-state">
+                  Flashcards are not implemented yet, but this tab is reserved for the
+                  next study mode.
+                </div>
+              </section>
+            ) : !workspace.analysis ? (
+              <section className="analysis-panel">
+                <div className="sidebar-section-title">
+                  <h3>Units</h3>
+                  <span>0</span>
+                </div>
+                <div className="empty-state">
+                  Analyze this subject first to generate its units.
+                </div>
+              </section>
+            ) : units.length === 0 ? (
+              <section className="analysis-panel">
+                <div className="sidebar-section-title">
+                  <h3>Units</h3>
+                  <span>0</span>
+                </div>
+                <div className="empty-state">
+                  No units were produced by the latest analysis yet.
+                </div>
+              </section>
+            ) : (
+              <section className="analysis-panel">
+                <div className="sidebar-section-title">
+                  <h3>Units</h3>
+                  <span>{units.length}</span>
+                </div>
+
+                <div className="division-nav-list units-page-list">
+                  {units.map((division) => (
+                    <button
+                      key={division.id}
+                      type="button"
+                      className={`division-nav-button units-page-button${
+                        selectedUnit?.id === division.id ? ' active' : ''
+                      }`}
+                      onClick={() => handleSelectDivision(division)}
+                    >
+                      <div className="division-nav-copy">
+                        <strong onMouseUp={() => handleDivisionListSelection(division)}>
+                          {division.title}
+                        </strong>
+                        <p
+                          className="division-nav-summary"
+                          onMouseUp={() => handleDivisionListSelection(division)}
+                        >
+                          {division.summary}
+                        </p>
+                      </div>
+                      <span className="division-nav-count">
+                        {division.sourcePages.length} page
+                        {division.sourcePages.length === 1 ? '' : 's'}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            )}
+          </section>
+        </div>
+      </section>
+    );
+  };
+
   return (
-    <main className={`app-shell${activeView === 'workspace' ? ' workspace-mode' : ''}`}>
-      {activeView !== 'workspace' ? (
+    <main className={`app-shell${activeView === 'workspace' || activeView === 'units' ? ' workspace-mode' : ''}`}>
+      {activeView !== 'workspace' && activeView !== 'units' ? (
         <aside className="sidebar">
           <h1>StudyBud</h1>
           <p className="sidebar-version">v{appInfo?.version ?? '...'}</p>
@@ -3661,11 +3961,14 @@ export const App = () => {
       ) : null}
 
       <section className="content">
-        {error ? (
-          <DismissibleBanner variant="error" dismissKey={`app-error:${error}`}>
-            {error}
-          </DismissibleBanner>
-        ) : null}
+        <div className="content-topbar">
+          <div />
+          <NotificationCenter
+            notifications={[...contextualNotifications, ...notifications]}
+            onDismiss={dismissNotification}
+            onClearAll={() => setNotifications([])}
+          />
+        </div>
 
         {selectionDraft && selectionPopupPosition && selectionUiMode === 'chip' ? (
           <SelectionAskChip
@@ -3681,8 +3984,8 @@ export const App = () => {
             position={selectionPopupPosition}
             question={selectionQuestionInput}
             busy={chatBusy}
-            aiActionsEnabled={analysisReady}
-            disabledReason={!analysisReady ? aiActionBlockedReason : null}
+            aiActionsEnabled={!unitSelectionBlockedReason}
+            disabledReason={unitSelectionBlockedReason}
             onQuestionChange={setSelectionQuestionInput}
             onSubmit={() => void handleAskSelectionQuestion()}
             onCancel={closeSelectionPopup}
@@ -3693,7 +3996,9 @@ export const App = () => {
           ? renderLibrary()
           : activeView === 'settings'
             ? renderSettings()
-            : renderWorkspace()}
+            : activeView === 'units'
+              ? renderUnitsPage()
+              : renderWorkspace()}
       </section>
     </main>
   );

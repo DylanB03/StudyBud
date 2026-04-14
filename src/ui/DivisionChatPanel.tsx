@@ -26,6 +26,10 @@ type DivisionChatPanelProps = {
   onSelectMessageText: (message: DivisionChatMessage) => void;
   activeCitationKey: string | null;
   documentBytesCache: Record<string, Uint8Array>;
+  heading?: string;
+  emptyStateMessage?: string;
+  submitLabel?: string;
+  placeholder?: string;
 };
 
 export const DivisionChatPanel = ({
@@ -45,8 +49,14 @@ export const DivisionChatPanel = ({
   onSelectMessageText,
   activeCitationKey,
   documentBytesCache,
+  heading = 'Division Chat',
+  emptyStateMessage = 'Ask a question about this division, or highlight text in the summary or extracted page text and ask for clarification.',
+  submitLabel = 'Ask Division Chat',
+  placeholder = 'Ask a question about this division...',
 }: DivisionChatPanelProps) => {
-  const endRef = useRef<HTMLDivElement | null>(null);
+  const messageListRef = useRef<HTMLDivElement | null>(null);
+  const previousMessageCountRef = useRef(messages.length);
+  const previousPendingPromptRef = useRef<string | null>(pendingPrompt);
   const [expandedGroundingIds, setExpandedGroundingIds] = useState<
     Record<string, boolean>
   >({});
@@ -58,7 +68,7 @@ export const DivisionChatPanel = ({
 
     switch (message.selectionContext.kind) {
       case 'division-summary':
-        return 'Analysis selection';
+        return 'Unit selection';
       case 'page-text':
         return `Page ${message.selectionContext.pageNumber ?? '?'}`;
       case 'chat-question':
@@ -75,10 +85,26 @@ export const DivisionChatPanel = ({
   };
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({
-      block: 'end',
-      behavior: messages.length > 0 ? 'smooth' : 'auto',
-    });
+    const messageList = messageListRef.current;
+    if (!messageList) {
+      previousMessageCountRef.current = messages.length;
+      previousPendingPromptRef.current = pendingPrompt;
+      return;
+    }
+
+    const shouldScroll =
+      messages.length > previousMessageCountRef.current ||
+      (pendingPrompt !== null && previousPendingPromptRef.current !== pendingPrompt);
+
+    if (shouldScroll) {
+      messageList.scrollTo({
+        top: messageList.scrollHeight,
+        behavior: previousMessageCountRef.current > 0 ? 'smooth' : 'auto',
+      });
+    }
+
+    previousMessageCountRef.current = messages.length;
+    previousPendingPromptRef.current = pendingPrompt;
   }, [messages.length, pendingPrompt]);
 
   const toggleGrounding = (messageId: string) => {
@@ -91,39 +117,43 @@ export const DivisionChatPanel = ({
   return (
     <section className="analysis-panel">
       <div className="sidebar-section-title">
-        <h3>Division Chat</h3>
+        <h3>{heading}</h3>
         <span>{messages.length}</span>
       </div>
 
-      {errorMessage ? (
-        <DismissibleBanner
-          dismissKey={`chat-error:${errorMessage}`}
-          className="panel-banner"
-          action={
-            onRetry ? (
-              <button
-                type="button"
-                className="ghost-button"
-                onClick={onRetry}
-                disabled={chatBusy}
-              >
-                Retry
-              </button>
-            ) : null
-          }
-        >
-          <span>{errorMessage}</span>
-        </DismissibleBanner>
+      {errorMessage || (!aiActionsEnabled && disabledReason) ? (
+        <div className="chat-panel-status">
+          {errorMessage ? (
+            <DismissibleBanner
+              dismissKey={`chat-error:${errorMessage}`}
+              className="panel-banner"
+              action={
+                onRetry ? (
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={onRetry}
+                    disabled={chatBusy}
+                  >
+                    Retry
+                  </button>
+                ) : null
+              }
+            >
+              <span>{errorMessage}</span>
+            </DismissibleBanner>
+          ) : null}
+
+          {!aiActionsEnabled && disabledReason ? (
+            <div className="warning-banner">{disabledReason}</div>
+          ) : null}
+        </div>
       ) : null}
 
-      {!aiActionsEnabled && disabledReason ? (
-        <div className="warning-banner">{disabledReason}</div>
-      ) : null}
-
-      <div className="chat-message-list">
+      <div ref={messageListRef} className="chat-message-list">
         {messages.length === 0 ? (
           <div className="empty-state">
-            Ask a question about this division, or highlight text in the summary or extracted page text and ask for clarification.
+            {emptyStateMessage}
           </div>
         ) : (
           messages.map((message) => (
@@ -225,15 +255,13 @@ export const DivisionChatPanel = ({
             </article>
           </>
         ) : null}
-
-        <div ref={endRef} />
       </div>
 
       <div className="chat-composer">
         <textarea
           value={chatInput}
           onChange={(event) => onChatInputChange(event.target.value)}
-          placeholder="Ask a question about this division..."
+          placeholder={placeholder}
           rows={4}
           disabled={chatBusy || !aiActionsEnabled}
         />
@@ -243,7 +271,7 @@ export const DivisionChatPanel = ({
             disabled={chatBusy || !chatInput.trim() || !aiActionsEnabled}
             onClick={onSubmit}
           >
-            Ask Division Chat
+            {submitLabel}
           </button>
         </div>
       </div>

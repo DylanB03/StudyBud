@@ -32,6 +32,10 @@ type PracticePanelProps = {
   disabledReason?: string | null;
   errorMessage?: string | null;
   onRetryGenerate?: (() => void) | null;
+  heading?: string;
+  generateHelperText?: string;
+  emptyStateWithoutProblemTypes?: string;
+  emptyStateWithoutSets?: string;
 };
 
 const formatDateTime = (value: string): string => {
@@ -67,6 +71,10 @@ export const PracticePanel = ({
   disabledReason = null,
   errorMessage = null,
   onRetryGenerate = null,
+  heading = 'Practice Studio',
+  generateHelperText = 'Generated sets stay saved under this division, and each answer key can be revealed only when you want it.',
+  emptyStateWithoutProblemTypes = 'Analyze more material or refine this division before generating practice.',
+  emptyStateWithoutSets = 'No saved practice sets for this division yet. Generate a set from one of the detected problem types above.',
 }: PracticePanelProps) => {
   const [collapsedSets, setCollapsedSets] = useState<Record<string, boolean>>({});
 
@@ -90,7 +98,7 @@ export const PracticePanel = ({
   return (
     <section className="analysis-panel practice-panel">
       <div className="sidebar-section-title">
-        <h3>Practice Studio</h3>
+        <h3>{heading}</h3>
         <span>{practiceSets.length}</span>
       </div>
 
@@ -173,21 +181,15 @@ export const PracticePanel = ({
             {generateBusy ? 'Generating Practice...' : 'Generate Practice'}
           </button>
           <p className="analysis-muted">
-            Generated sets stay saved under this division, and each answer key can
-            be revealed only when you want it.
+            {generateHelperText}
           </p>
         </div>
       </div>
 
       {division.problemTypes.length === 0 ? (
-        <div className="empty-state">
-          Analyze more material or refine this division before generating practice.
-        </div>
+        <div className="empty-state">{emptyStateWithoutProblemTypes}</div>
       ) : practiceSets.length === 0 ? (
-        <div className="empty-state">
-          No saved practice sets for this division yet. Generate a set from one of
-          the detected problem types above.
-        </div>
+        <div className="empty-state">{emptyStateWithoutSets}</div>
       ) : (
         <div className="practice-set-list">
           {practiceSets.map((practiceSet) => (

@@ -9,6 +9,7 @@ import {
   dialog,
   ipcMain,
   safeStorage,
+  screen,
   session,
 } from 'electron';
 import started from 'electron-squirrel-startup';
@@ -1230,14 +1231,24 @@ const createWindow = () => {
       mainWindow.restore();
     }
 
+    mainWindow.show();
     mainWindow.focus();
     return mainWindow;
   }
 
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const workArea = primaryDisplay.workArea;
+  const width = Math.min(1360, Math.max(960, workArea.width - 80));
+  const height = Math.min(900, Math.max(720, workArea.height - 80));
+  const x = Math.round(workArea.x + (workArea.width - width) / 2);
+  const y = Math.round(workArea.y + (workArea.height - height) / 2);
+
   mainWindow = new BrowserWindow({
-    width: 1360,
-    height: 900,
-    minWidth: 1120,
+    width,
+    height,
+    x,
+    y,
+    minWidth: 960,
     minHeight: 720,
     title: 'StudyBud',
     backgroundColor: '#0d1320',
@@ -1258,9 +1269,26 @@ const createWindow = () => {
     );
   }
 
+  const showAndFocusWindow = () => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return;
+    }
+
+    mainWindow.show();
+    mainWindow.focus();
+  };
+
   mainWindow.once('ready-to-show', () => {
-    mainWindow?.show();
+    showAndFocusWindow();
   });
+
+  mainWindow.webContents.once('did-finish-load', () => {
+    showAndFocusWindow();
+  });
+
+  setTimeout(() => {
+    showAndFocusWindow();
+  }, 2500);
 
   mainWindow.webContents.on(
     'render-process-gone',
