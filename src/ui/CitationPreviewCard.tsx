@@ -1,9 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
-// Vite resolves asset URLs through the ?url suffix at build time.
-// eslint-disable-next-line import/no-unresolved
-import workerSrc from 'pdfjs-dist/build/pdf.worker.mjs?url';
-import { GlobalWorkerOptions, getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
+import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import type {
   PDFDocumentProxy,
   PDFPageProxy,
@@ -11,25 +8,13 @@ import type {
 } from 'pdfjs-dist/types/src/display/api';
 
 import type { CitationRef } from '../shared/ipc';
+import {
+  clonePdfBytes,
+  ensurePdfJsWorkerConfigured,
+  isExpectedPdfTearDownError,
+} from './pdf-viewer-utils';
 
-GlobalWorkerOptions.workerSrc = new URL(
-  workerSrc,
-  window.location.href,
-).toString();
-
-const isExpectedPdfTearDownError = (error: unknown): boolean => {
-  if (!(error instanceof Error)) {
-    return false;
-  }
-
-  const message = error.message.toLowerCase();
-  return (
-    message.includes('rendering cancelled') ||
-    message.includes('transport destroyed') ||
-    message.includes('worker was destroyed') ||
-    message.includes('page was destroyed')
-  );
-};
+ensurePdfJsWorkerConfigured();
 
 const renderPreviewPage = async (
   canvas: HTMLCanvasElement,
@@ -62,10 +47,6 @@ type CitationPreviewCardProps = {
   active: boolean;
   onClick: () => void;
   onTextSelection?: (citation: CitationRef) => void;
-};
-
-const clonePdfBytes = (bytes: Uint8Array): Uint8Array => {
-  return bytes.slice();
 };
 
 export const CitationPreviewCard = ({

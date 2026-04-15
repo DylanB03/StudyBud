@@ -16,8 +16,6 @@ import type {
 } from '../db/database';
 import {
   createStructuredResponse,
-  getResolvedProviderLabel,
-  getResolvedProviderModel,
   type StructuredAiProviderConfig,
 } from '../ai/provider';
 import { extractCitationExcerpt } from '../analysis/citation-excerpts';
@@ -121,6 +119,23 @@ const parseJsonArray = <T>(value: string, fallback: T[]): T[] => {
   }
 };
 
+const parseSelectionContext = (
+  value: string | null,
+): SelectionContext | null => {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return parsed && typeof parsed === 'object'
+      ? (parsed as SelectionContext)
+      : null;
+  } catch {
+    return null;
+  }
+};
+
 const sanitizeVisibleAnswerText = (value: string): string => {
   return value
     .replace(/\s*\(?\[?PAGE_\d{3}\]?\)?/g, '')
@@ -149,9 +164,7 @@ const mapChatMessageRow = (row: ChatMessageRow): DivisionChatMessage => {
       row.suggestedVideoQueriesJson,
       [],
     ),
-    selectionContext: row.selectionContextJson
-      ? (JSON.parse(row.selectionContextJson) as SelectionContext)
-      : null,
+    selectionContext: parseSelectionContext(row.selectionContextJson),
     createdAt: new Date(row.createdAt).toISOString(),
   };
 };
@@ -425,16 +438,4 @@ export const mapPersistedDivisionChatMessages = (
   rows: ChatMessageRow[],
 ): DivisionChatMessage[] => {
   return rows.map(mapChatMessageRow);
-};
-
-export const getChatProviderSummary = (
-  providerConfig: StructuredAiProviderConfig,
-): {
-  provider: string;
-  model: string;
-} => {
-  return {
-    provider: getResolvedProviderLabel(providerConfig),
-    model: getResolvedProviderModel(providerConfig),
-  };
 };

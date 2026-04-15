@@ -102,16 +102,6 @@ export type DocumentPageRow = {
   createdAt: number;
 };
 
-export type DocumentChunkRow = {
-  id: string;
-  documentId: string;
-  pageId: string;
-  chunkIndex: number;
-  textContent: string;
-  textLength: number;
-  createdAt: number;
-};
-
 export type JobRow = {
   id: string;
   subjectId: string | null;
@@ -131,13 +121,6 @@ export type DivisionRow = {
   keyConceptsJson: string;
   createdAt: number;
   updatedAt: number;
-};
-
-export type DivisionSourcePageRow = {
-  id: string;
-  divisionId: string;
-  pageId: string;
-  createdAt: number;
 };
 
 export type ProblemTypeRow = {
@@ -204,13 +187,6 @@ export type FlashcardDeckRow = {
   cardCount: number;
   createdAt: number;
   updatedAt: number;
-};
-
-export type FlashcardDeckUnitRow = {
-  id: string;
-  flashcardDeckId: string;
-  divisionId: string;
-  createdAt: number;
 };
 
 export type FlashcardCardRow = {

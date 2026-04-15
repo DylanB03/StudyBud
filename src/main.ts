@@ -262,6 +262,20 @@ const formatTimestamp = (value: number): string => {
   return new Date(value).toISOString();
 };
 
+const parseJsonObject = <T extends Record<string, unknown>>(
+  raw: string,
+  fallback: T,
+): T => {
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as T)
+      : fallback;
+  } catch {
+    return fallback;
+  }
+};
+
 const normalizeDialogFilePaths = (filePaths: unknown[]): string[] => {
   return filePaths.filter((filePath): filePath is string => {
     return typeof filePath === 'string' && filePath.trim().length > 0;
@@ -445,7 +459,7 @@ const mapPage = (page: DocumentPageRow): DocumentPageSummary => {
 };
 
 const mapJob = (job: JobRow): ImportJobSummary => {
-  const payload = JSON.parse(job.payload) as {
+  const payload = parseJsonObject<{
     kind?: DocumentKind;
     selectedFiles?: string[];
     importedDocumentIds?: string[];
@@ -453,7 +467,7 @@ const mapJob = (job: JobRow): ImportJobSummary => {
     ocrAttemptedCount?: number;
     ocrImprovedCount?: number;
     ocrFailedCount?: number;
-  };
+  }>(job.payload, {});
 
   if (!job.subjectId) {
     throw new Error(`Job ${job.id} is missing subject context`);
@@ -478,13 +492,13 @@ const mapJob = (job: JobRow): ImportJobSummary => {
 };
 
 const mapAnalysisJob = (job: JobRow): SubjectAnalysisJobSummary => {
-  const payload = JSON.parse(job.payload) as {
+  const payload = parseJsonObject<{
     provider?: string;
     model?: string;
     divisionCount?: number;
     problemTypeCount?: number;
     unassignedPageCount?: number;
-  };
+  }>(job.payload, {});
 
   if (!job.subjectId) {
     throw new Error(`Job ${job.id} is missing subject context`);
@@ -987,15 +1001,21 @@ const registerIpcHandlers = (): void => {
           filePaths: selectedFilePaths,
         },
       );
+      const db = getDatabaseOrThrow();
 
-        return {
-          canceled: false,
-          job: mapJob(result.job),
-          importedDocuments: result.importedDocuments.map((document) =>
-            mapDocument(document),
+      return {
+        canceled: false,
+        job: mapJob(result.job),
+        importedDocuments: result.importedDocuments.map((document) =>
+          mapDocument(
+            document,
+            document.importStatus === 'ready'
+              ? db.getPagesByDocument(document.id)
+              : [],
           ),
-          failures: result.failures,
-        };
+        ),
+        failures: result.failures,
+      };
     },
   );
 

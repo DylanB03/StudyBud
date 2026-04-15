@@ -405,10 +405,6 @@ export const detectOcrRuntime = async (
   return cachedRuntimeStatus;
 };
 
-export const resetCachedOcrRuntimeStatus = (): void => {
-  cachedRuntimeStatus = null;
-};
-
 export const runOcrForDocumentPages = async (input: {
   pdfPath: string;
   pages: OcrPageRequest[];
