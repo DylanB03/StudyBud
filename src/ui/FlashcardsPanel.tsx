@@ -34,6 +34,7 @@ type FlashcardCardDraft = {
 };
 
 type ComposerMode = 'library' | 'chooser' | 'generate' | 'manual' | 'deck';
+const MAX_MANUAL_FLASHCARDS = 60;
 
 const createDraftCard = (): FlashcardCardDraft => ({
   id: `draft-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -128,6 +129,7 @@ export const FlashcardsPanel = ({
   const canCreateManual =
     !busy &&
     manualTitle.trim().length > 0 &&
+    manualCards.length <= MAX_MANUAL_FLASHCARDS &&
     manualCards.every(
       (card) => card.front.trim().length > 0 && card.back.trim().length > 0,
     );
@@ -174,6 +176,8 @@ export const FlashcardsPanel = ({
       });
       setMode('library');
       setGenerateTitle('');
+    } catch {
+      // Parent handlers surface the actual message in panel/app state.
     } finally {
       setPendingAction(null);
     }
@@ -196,6 +200,8 @@ export const FlashcardsPanel = ({
       });
       resetManualComposer();
       setMode('library');
+    } catch {
+      // Parent handlers surface the actual message in panel/app state.
     } finally {
       setPendingAction(null);
     }
@@ -495,13 +501,20 @@ export const FlashcardsPanel = ({
             ))}
           </div>
 
+          <p className="analysis-muted">
+            {manualCards.length} / {MAX_MANUAL_FLASHCARDS} cards
+          </p>
+
           <div className="flashcard-composer-actions">
             <button
               type="button"
               className="ghost-button"
               onClick={() => setManualCards((previous) => [...previous, createDraftCard()])}
+              disabled={manualCards.length >= MAX_MANUAL_FLASHCARDS}
             >
-              Add Card
+              {manualCards.length >= MAX_MANUAL_FLASHCARDS
+                ? 'Card Limit Reached'
+                : 'Add Card'}
             </button>
             <div className="flashcard-action-row">
               <button

@@ -2110,6 +2110,7 @@ export const App = () => {
           : 'Could not generate the flashcard deck.';
       setFlashcardsError(message);
       setError(message);
+      throw caughtError instanceof Error ? caughtError : new Error(message);
     } finally {
       setFlashcardsBusy(false);
     }
@@ -2154,6 +2155,7 @@ export const App = () => {
           : 'Could not create the flashcard deck.';
       setFlashcardsError(message);
       setError(message);
+      throw caughtError instanceof Error ? caughtError : new Error(message);
     } finally {
       setFlashcardsBusy(false);
     }

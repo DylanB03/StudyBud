@@ -1151,6 +1151,16 @@ const registerIpcHandlers = (): void => {
         throw new Error('Subject not found');
       }
 
+      const validDivisionIds = new Set(
+        db.getSubjectAnalysis(parsed.subjectId).divisions.map(
+          (division) => division.division.id,
+        ),
+      );
+
+      if (!parsed.divisionIds.every((divisionId) => validDivisionIds.has(divisionId))) {
+        throw new Error('One or more selected units do not belong to this subject.');
+      }
+
       const flashcardDeck = await generateFlashcardDeck({
         providerConfig: getAiProviderConfigOrThrow(),
         subjectId: parsed.subjectId,
@@ -1179,6 +1189,16 @@ const registerIpcHandlers = (): void => {
 
       if (!subject) {
         throw new Error('Subject not found');
+      }
+
+      const validDivisionIds = new Set(
+        db.getSubjectAnalysis(parsed.subjectId).divisions.map(
+          (division) => division.division.id,
+        ),
+      );
+
+      if (!parsed.divisionIds.every((divisionId) => validDivisionIds.has(divisionId))) {
+        throw new Error('One or more selected units do not belong to this subject.');
       }
 
       const flashcardDeck = createManualFlashcardDeck({

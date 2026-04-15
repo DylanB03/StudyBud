@@ -16,6 +16,8 @@ type NotificationCenterProps = {
   onClearAll: () => void;
 };
 
+const DISMISSED_NOTIFICATIONS_STORAGE_KEY = 'studybud.dismissedNotifications';
+
 const formatTimestamp = (createdAt: number): string => {
   return new Date(createdAt).toLocaleTimeString(undefined, {
     hour: 'numeric',
@@ -29,7 +31,20 @@ export const NotificationCenter = ({
   onClearAll,
 }: NotificationCenterProps) => {
   const [open, setOpen] = useState(false);
-  const [dismissedIds, setDismissedIds] = useState<string[]>([]);
+  const [dismissedIds, setDismissedIds] = useState<string[]>(() => {
+    if (typeof window === 'undefined') {
+      return [];
+    }
+
+    try {
+      const stored = window.localStorage.getItem(
+        DISMISSED_NOTIFICATIONS_STORAGE_KEY,
+      );
+      return stored ? (JSON.parse(stored) as string[]) : [];
+    } catch {
+      return [];
+    }
+  });
 
   const visibleNotifications = notifications.filter(
     (notification) => !dismissedIds.includes(notification.id),
@@ -48,6 +63,17 @@ export const NotificationCenter = ({
       ),
     );
   }, [notifications]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    window.localStorage.setItem(
+      DISMISSED_NOTIFICATIONS_STORAGE_KEY,
+      JSON.stringify(dismissedIds),
+    );
+  }, [dismissedIds]);
 
   return (
     <div className="notification-center">
@@ -82,7 +108,9 @@ export const NotificationCenter = ({
                 type="button"
                 className="ghost-button"
                 onClick={() => {
-                  setDismissedIds(visibleNotifications.map((notification) => notification.id));
+                  setDismissedIds(
+                    visibleNotifications.map((notification) => notification.id),
+                  );
                   onClearAll();
                 }}
               >
@@ -111,7 +139,11 @@ export const NotificationCenter = ({
                       type="button"
                       className="banner-dismiss"
                       onClick={() => {
-                        setDismissedIds((previous) => [...previous, notification.id]);
+                        setDismissedIds((previous) =>
+                          previous.includes(notification.id)
+                            ? previous
+                            : [...previous, notification.id],
+                        );
                         onDismiss(notification.id);
                       }}
                       aria-label="Dismiss notification"
