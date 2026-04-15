@@ -28,6 +28,11 @@ import {
   mapPersistedPracticeSets,
 } from './main/practice/practice-generation';
 import {
+  createManualFlashcardDeck,
+  generateFlashcardDeck,
+  mapPersistedFlashcardDecks,
+} from './main/flashcards/flashcard-generation';
+import {
   type DocumentPageRow,
   type JobRow,
   DatabaseService,
@@ -47,8 +52,13 @@ import {
   type AnalyzeSubjectInput,
   type AnalyzeSubjectResult,
   type AiProvider,
+  type CreateFlashcardDeckResult,
+  type CreateFlashcardDeckInput,
+  type DeleteFlashcardDeckInput,
   type GeneratePracticeInput,
   type GeneratePracticeResult,
+  type GenerateFlashcardsInput,
+  type GenerateFlashcardsResult,
   IPC_CHANNELS,
   type AppInfo,
   type CreateSubjectInput,
@@ -174,6 +184,32 @@ const revealPracticeAnswerSchema = z.object({
 
 const deletePracticeSetSchema = z.object({
   practiceSetId: z.string().uuid(),
+});
+
+const generateFlashcardsSchema = z.object({
+  subjectId: z.string().uuid(),
+  divisionIds: z.array(z.string().uuid()).min(1).max(12),
+  count: z.number().int().min(1).max(24),
+  title: z.string().trim().min(1).max(120).optional(),
+});
+
+const createFlashcardDeckSchema = z.object({
+  subjectId: z.string().uuid(),
+  title: z.string().trim().min(1).max(120),
+  divisionIds: z.array(z.string().uuid()).max(12),
+  cards: z
+    .array(
+      z.object({
+        front: z.string().trim().min(1).max(300),
+        back: z.string().trim().min(1).max(1200),
+      }),
+    )
+    .min(1)
+    .max(60),
+});
+
+const deleteFlashcardDeckSchema = z.object({
+  flashcardDeckId: z.string().uuid(),
 });
 
 const researchSearchSchema = z.object({
@@ -497,6 +533,10 @@ const getSubjectWorkspace = (subjectId: string): SubjectWorkspace => {
       db.listChatMessagesBySubject(subjectId),
     ),
     practiceSets: mapPersistedPracticeSets(db.listPracticeSetsBySubject(subjectId)),
+    flashcardDecks: mapPersistedFlashcardDecks(
+      db.listFlashcardDecksBySubject(subjectId),
+      db,
+    ),
   };
 };
 
@@ -1092,6 +1132,78 @@ const registerIpcHandlers = (): void => {
 
       if (!deleted) {
         throw new Error('Practice set not found');
+      }
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.FLASHCARDS_GENERATE,
+    async (
+      _event,
+      input: GenerateFlashcardsInput,
+    ): Promise<GenerateFlashcardsResult> => {
+      await ensureInitialized();
+      const parsed = generateFlashcardsSchema.parse(input);
+      const db = getDatabaseOrThrow();
+      const subject = db.getSubjectById(parsed.subjectId);
+
+      if (!subject) {
+        throw new Error('Subject not found');
+      }
+
+      const flashcardDeck = await generateFlashcardDeck({
+        providerConfig: getAiProviderConfigOrThrow(),
+        subjectId: parsed.subjectId,
+        divisionIds: parsed.divisionIds,
+        count: parsed.count,
+        title: parsed.title,
+        database: db,
+      });
+
+      return {
+        flashcardDeck,
+      };
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.FLASHCARDS_CREATE,
+    async (
+      _event,
+      input: CreateFlashcardDeckInput,
+    ): Promise<CreateFlashcardDeckResult> => {
+      await ensureInitialized();
+      const parsed = createFlashcardDeckSchema.parse(input);
+      const db = getDatabaseOrThrow();
+      const subject = db.getSubjectById(parsed.subjectId);
+
+      if (!subject) {
+        throw new Error('Subject not found');
+      }
+
+      const flashcardDeck = createManualFlashcardDeck({
+        subjectId: parsed.subjectId,
+        title: parsed.title,
+        divisionIds: parsed.divisionIds,
+        cards: parsed.cards,
+        database: db,
+      });
+
+      return {
+        flashcardDeck,
+      };
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.FLASHCARDS_DELETE,
+    async (_event, input: DeleteFlashcardDeckInput): Promise<void> => {
+      await ensureInitialized();
+      const parsed = deleteFlashcardDeckSchema.parse(input);
+      const deleted = getDatabaseOrThrow().deleteFlashcardDeck(parsed.flashcardDeckId);
+
+      if (!deleted) {
+        throw new Error('Flashcard deck not found');
       }
     },
   );

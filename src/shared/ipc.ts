@@ -14,6 +14,9 @@ export const IPC_CHANNELS = {
   PRACTICE_GENERATE: 'practice:generate',
   PRACTICE_REVEAL: 'practice:reveal',
   PRACTICE_DELETE: 'practice:delete',
+  FLASHCARDS_GENERATE: 'flashcards:generate',
+  FLASHCARDS_CREATE: 'flashcards:create',
+  FLASHCARDS_DELETE: 'flashcards:delete',
   RESEARCH_SEARCH: 'research:search',
   RESEARCH_NAVIGATE: 'research:navigate',
   RESEARCH_BACK: 'research:back',
@@ -173,6 +176,7 @@ export type SubjectWorkspace = {
   analysis: SubjectAnalysisSummary | null;
   chatMessages: DivisionChatMessage[];
   practiceSets: PracticeSet[];
+  flashcardDecks: FlashcardDeck[];
 };
 
 export type ImportDocumentsInput = {
@@ -346,6 +350,59 @@ export type DeletePracticeSetInput = {
   practiceSetId: string;
 };
 
+export type FlashcardCard = {
+  id: string;
+  cardIndex: number;
+  front: string;
+  back: string;
+  difficulty: PracticeDifficulty | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type FlashcardDeck = {
+  id: string;
+  subjectId: string;
+  title: string;
+  creationMode: 'generated' | 'manual';
+  difficultyMode: 'mixed' | 'manual';
+  cardCount: number;
+  createdAt: string;
+  updatedAt: string;
+  unitIds: string[];
+  unitTitles: string[];
+  cards: FlashcardCard[];
+};
+
+export type GenerateFlashcardsInput = {
+  subjectId: string;
+  divisionIds: string[];
+  count: number;
+  title?: string;
+};
+
+export type GenerateFlashcardsResult = {
+  flashcardDeck: FlashcardDeck;
+};
+
+export type CreateFlashcardDeckInput = {
+  subjectId: string;
+  title: string;
+  divisionIds: string[];
+  cards: Array<{
+    front: string;
+    back: string;
+  }>;
+};
+
+export type CreateFlashcardDeckResult = {
+  flashcardDeck: FlashcardDeck;
+};
+
+export type DeleteFlashcardDeckInput = {
+  flashcardDeckId: string;
+};
+
 export type ResearchWebResult = {
   id: string;
   title: string;
@@ -425,6 +482,13 @@ export interface StudyBudApi {
     input: RevealPracticeAnswerInput,
   ) => Promise<RevealPracticeAnswerResult>;
   deletePracticeSet: (input: DeletePracticeSetInput) => Promise<void>;
+  generateFlashcards: (
+    input: GenerateFlashcardsInput,
+  ) => Promise<GenerateFlashcardsResult>;
+  createFlashcardDeck: (
+    input: CreateFlashcardDeckInput,
+  ) => Promise<CreateFlashcardDeckResult>;
+  deleteFlashcardDeck: (input: DeleteFlashcardDeckInput) => Promise<void>;
   searchResearch: (input: ResearchSearchInput) => Promise<ResearchSearchResult>;
   navigateResearchBrowser: (
     input: ResearchBrowserNavigationInput,

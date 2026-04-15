@@ -492,4 +492,64 @@ describe('DatabaseService', () => {
     ).toHaveLength(0);
     expect(database.getPracticeSetByQuestionId('practice-question-delete')).toBeNull();
   });
+
+  it('persists and deletes flashcard decks', () => {
+    const { database } = createContext();
+
+    database.createSubjectWithId('Electromagnetics', 'subject-flashcards');
+    database.replaceSubjectAnalysis('subject-flashcards', {
+      divisions: [
+        {
+          division: {
+            id: 'division-fields',
+            title: 'Electric Fields',
+            summary: 'Analyze field strength and direction.',
+            keyConceptsJson: JSON.stringify(['field lines', 'superposition']),
+          },
+          sourcePageIds: [],
+          problemTypes: [],
+        },
+      ],
+      unassignedPages: [],
+    });
+
+    const inserted = database.insertFlashcardDeck({
+      flashcardDeck: {
+        id: 'flashcard-deck-1',
+        subjectId: 'subject-flashcards',
+        title: 'Fields Review',
+        creationMode: 'manual',
+        difficultyMode: 'manual',
+        cardCount: 2,
+      },
+      divisionIds: ['division-fields'],
+      cards: [
+        {
+          id: 'flashcard-card-1',
+          cardIndex: 1,
+          front: 'What is superposition?',
+          back: 'Add the contributions from each source vectorially.',
+          difficulty: null,
+        },
+        {
+          id: 'flashcard-card-2',
+          cardIndex: 2,
+          front: 'What direction do electric field lines point?',
+          back: 'Away from positive charges and toward negative charges.',
+          difficulty: null,
+        },
+      ],
+    });
+
+    expect(inserted.cards).toHaveLength(2);
+
+    const listed = database.listFlashcardDecksBySubject('subject-flashcards');
+    expect(listed).toHaveLength(1);
+    expect(listed[0]?.divisionIds).toEqual(['division-fields']);
+    expect(listed[0]?.cards[0]?.front).toContain('superposition');
+
+    const deleted = database.deleteFlashcardDeck('flashcard-deck-1');
+    expect(deleted?.id).toBe('flashcard-deck-1');
+    expect(database.listFlashcardDecksBySubject('subject-flashcards')).toHaveLength(0);
+  });
 });

@@ -10,6 +10,9 @@ import {
   documentPagesTable,
   divisionsTable,
   divisionSourcePagesTable,
+  flashcardCardsTable,
+  flashcardDecksTable,
+  flashcardDeckUnitsTable,
   jobsTable,
   practiceQuestionsTable,
   practiceSetSourcePagesTable,
@@ -30,6 +33,9 @@ const schema = {
   documentChunksTable,
   divisionsTable,
   divisionSourcePagesTable,
+  flashcardCardsTable,
+  flashcardDecksTable,
+  flashcardDeckUnitsTable,
   problemTypesTable,
   unassignedPagesTable,
   chatMessagesTable,
@@ -189,10 +195,45 @@ export type PracticeQuestionRow = {
   updatedAt: number;
 };
 
+export type FlashcardDeckRow = {
+  id: string;
+  subjectId: string;
+  title: string;
+  creationMode: 'generated' | 'manual';
+  difficultyMode: 'mixed' | 'manual';
+  cardCount: number;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type FlashcardDeckUnitRow = {
+  id: string;
+  flashcardDeckId: string;
+  divisionId: string;
+  createdAt: number;
+};
+
+export type FlashcardCardRow = {
+  id: string;
+  flashcardDeckId: string;
+  cardIndex: number;
+  front: string;
+  back: string;
+  difficulty: 'easy' | 'medium' | 'hard' | null;
+  createdAt: number;
+  updatedAt: number;
+};
+
 export type PracticeSetRecord = {
   practiceSet: PracticeSetRow;
   questions: PracticeQuestionRow[];
   sourcePages: SubjectPageContextRow[];
+};
+
+export type FlashcardDeckRecord = {
+  flashcardDeck: FlashcardDeckRow;
+  divisionIds: string[];
+  cards: FlashcardCardRow[];
 };
 
 export type SubjectPageContextRow = {
@@ -237,6 +278,12 @@ export type InsertPracticeSetInput = {
   practiceSet: Omit<PracticeSetRow, 'createdAt' | 'updatedAt'>;
   sourcePageIds: string[];
   questions: Array<Omit<PracticeQuestionRow, 'practiceSetId' | 'createdAt' | 'updatedAt'>>;
+};
+
+export type InsertFlashcardDeckInput = {
+  flashcardDeck: Omit<FlashcardDeckRow, 'createdAt' | 'updatedAt'>;
+  divisionIds: string[];
+  cards: Array<Omit<FlashcardCardRow, 'flashcardDeckId' | 'createdAt' | 'updatedAt'>>;
 };
 
 export type InsertImportedDocumentInput = {
@@ -632,6 +679,56 @@ export class DatabaseService {
       CREATE INDEX IF NOT EXISTS practice_set_source_pages_set_idx
       ON practice_set_source_pages(practice_set_id, page_id);
     `);
+
+    this.sqlite.exec(`
+      CREATE TABLE IF NOT EXISTS flashcard_decks (
+        id TEXT PRIMARY KEY,
+        subject_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        creation_mode TEXT NOT NULL,
+        difficulty_mode TEXT NOT NULL,
+        card_count INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+    `);
+
+    this.sqlite.exec(`
+      CREATE INDEX IF NOT EXISTS flashcard_decks_subject_idx
+      ON flashcard_decks(subject_id, created_at);
+    `);
+
+    this.sqlite.exec(`
+      CREATE TABLE IF NOT EXISTS flashcard_deck_units (
+        id TEXT PRIMARY KEY,
+        flashcard_deck_id TEXT NOT NULL,
+        division_id TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+    `);
+
+    this.sqlite.exec(`
+      CREATE INDEX IF NOT EXISTS flashcard_deck_units_deck_idx
+      ON flashcard_deck_units(flashcard_deck_id, division_id);
+    `);
+
+    this.sqlite.exec(`
+      CREATE TABLE IF NOT EXISTS flashcard_cards (
+        id TEXT PRIMARY KEY,
+        flashcard_deck_id TEXT NOT NULL,
+        card_index INTEGER NOT NULL,
+        front TEXT NOT NULL,
+        back TEXT NOT NULL,
+        difficulty TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+    `);
+
+    this.sqlite.exec(`
+      CREATE INDEX IF NOT EXISTS flashcard_cards_deck_idx
+      ON flashcard_cards(flashcard_deck_id, card_index);
+    `);
   }
 
   getSetting(key: string): SettingRow | null {
@@ -779,6 +876,26 @@ export class DatabaseService {
       this.db
         .delete(practiceSetsTable)
         .where(eq(practiceSetsTable.subjectId, subjectId))
+        .run();
+      const flashcardDeckIds = this.db
+        .select({ id: flashcardDecksTable.id })
+        .from(flashcardDecksTable)
+        .where(eq(flashcardDecksTable.subjectId, subjectId))
+        .all()
+        .map((row) => row.id);
+      for (const flashcardDeckId of flashcardDeckIds) {
+        this.db
+          .delete(flashcardDeckUnitsTable)
+          .where(eq(flashcardDeckUnitsTable.flashcardDeckId, flashcardDeckId))
+          .run();
+        this.db
+          .delete(flashcardCardsTable)
+          .where(eq(flashcardCardsTable.flashcardDeckId, flashcardDeckId))
+          .run();
+      }
+      this.db
+        .delete(flashcardDecksTable)
+        .where(eq(flashcardDecksTable.subjectId, subjectId))
         .run();
       this.db
         .delete(jobsTable)
@@ -1112,6 +1229,111 @@ export class DatabaseService {
 
     transaction();
     return practiceSet;
+  }
+
+  listFlashcardDecksBySubject(subjectId: string): FlashcardDeckRecord[] {
+    const flashcardDecks = this.db
+      .select()
+      .from(flashcardDecksTable)
+      .where(eq(flashcardDecksTable.subjectId, subjectId))
+      .orderBy(desc(flashcardDecksTable.createdAt))
+      .all() as FlashcardDeckRow[];
+
+    return flashcardDecks.map((flashcardDeck) => ({
+      flashcardDeck,
+      divisionIds: this.db
+        .select()
+        .from(flashcardDeckUnitsTable)
+        .where(eq(flashcardDeckUnitsTable.flashcardDeckId, flashcardDeck.id))
+        .orderBy(flashcardDeckUnitsTable.createdAt, flashcardDeckUnitsTable.id)
+        .all()
+        .map((row) => row.divisionId),
+      cards: (this.db
+        .select()
+        .from(flashcardCardsTable)
+        .where(eq(flashcardCardsTable.flashcardDeckId, flashcardDeck.id))
+        .orderBy(flashcardCardsTable.cardIndex)
+        .all() as FlashcardCardRow[]),
+    }));
+  }
+
+  insertFlashcardDeck(input: InsertFlashcardDeckInput): FlashcardDeckRecord {
+    const now = createNow();
+    const flashcardDeckRow: FlashcardDeckRow = {
+      ...input.flashcardDeck,
+      createdAt: now,
+      updatedAt: now,
+    };
+    const cardRows: FlashcardCardRow[] = input.cards.map((card) => ({
+      ...card,
+      flashcardDeckId: flashcardDeckRow.id,
+      createdAt: now,
+      updatedAt: now,
+    }));
+
+    const transaction = this.sqlite.transaction(() => {
+      this.db.insert(flashcardDecksTable).values(flashcardDeckRow).run();
+
+      if (input.divisionIds.length > 0) {
+        this.db
+          .insert(flashcardDeckUnitsTable)
+          .values(
+            input.divisionIds.map((divisionId, index) => ({
+              id: `${flashcardDeckRow.id}:unit:${index}:${divisionId}`,
+              flashcardDeckId: flashcardDeckRow.id,
+              divisionId,
+              createdAt: now,
+            })),
+          )
+          .run();
+      }
+
+      if (cardRows.length > 0) {
+        this.db.insert(flashcardCardsTable).values(cardRows).run();
+      }
+
+      this.touchSubject(flashcardDeckRow.subjectId);
+    });
+
+    transaction();
+
+    return {
+      flashcardDeck: flashcardDeckRow,
+      divisionIds: input.divisionIds,
+      cards: cardRows,
+    };
+  }
+
+  deleteFlashcardDeck(flashcardDeckId: string): FlashcardDeckRow | null {
+    const flashcardDeck =
+      (this.db
+        .select()
+        .from(flashcardDecksTable)
+        .where(eq(flashcardDecksTable.id, flashcardDeckId))
+        .get() as FlashcardDeckRow | undefined) ?? null;
+
+    if (!flashcardDeck) {
+      return null;
+    }
+
+    const transaction = this.sqlite.transaction(() => {
+      this.db
+        .delete(flashcardDeckUnitsTable)
+        .where(eq(flashcardDeckUnitsTable.flashcardDeckId, flashcardDeckId))
+        .run();
+      this.db
+        .delete(flashcardCardsTable)
+        .where(eq(flashcardCardsTable.flashcardDeckId, flashcardDeckId))
+        .run();
+      this.db
+        .delete(flashcardDecksTable)
+        .where(eq(flashcardDecksTable.id, flashcardDeckId))
+        .run();
+      this.touchSubject(flashcardDeck.subjectId);
+    });
+
+    transaction();
+    return flashcardDeck;
   }
 
   listJobsBySubject(subjectId: string, type?: string): JobRow[] {

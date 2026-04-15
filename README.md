@@ -9,6 +9,7 @@ At a high level, the app lets a student:
 - run AI analysis to break the material into divisions/study units
 - browse cited lecture/homework pages for each division
 - ask grounded questions about a division or highlighted text
+- create and study flashcard decks
 - generate practice problems by problem type and difficulty
 - research related websites and videos from inside the workspace
 
@@ -38,6 +39,12 @@ Current implemented capabilities:
   - extracted page text
   - division chat messages
   - practice questions and answers
+- flashcards with:
+  - AI-generated mixed-difficulty decks from selected units
+  - manual deck creation
+  - saved deck library per subject
+  - fullscreen card study mode
+  - click-to-flip question/answer cards
 - practice generation by problem type and difficulty
 - reveal/hide answer keys
 - research tab with:
@@ -89,6 +96,7 @@ Main entry points:
 - `src/main/ocr/runtime.ts`: OCR runtime resolution and execution
 - `src/main/analysis/subject-analysis.ts`: division analysis
 - `src/main/chat/grounded-chat.ts`: grounded chat
+- `src/main/flashcards/flashcard-generation.ts`: flashcard generation and mapping
 - `src/main/practice/practice-generation.ts`: practice generation
 - `src/main/research/search.ts`: research search/video workflow
 
@@ -319,6 +327,21 @@ You can also highlight text from many places and use `Ask about this`, including
 
 Answers appear in the right-side chat rail and can include expandable grounding citations.
 
+### Study Flashcards
+
+From the subject `Flashcards` tab you can:
+- create a new deck
+- choose `Generate With AI` or `Create Manually`
+- select which units to include for AI generation
+- generate a mixed-difficulty deck with a chosen card count
+- write your own question/answer cards for manual decks
+
+Saved decks stay attached to the subject. Opening a deck lets you:
+- click the card to flip between question and answer
+- move left/right through the deck
+- open the card view in fullscreen
+- delete decks you no longer want
+
 ### Generate Practice
 
 For the selected division:
@@ -382,6 +405,7 @@ StudyBud stores:
 - extracted pages/chunks
 - saved analysis
 - saved chat history
+- saved flashcard decks
 - saved practice sets
 - settings
 

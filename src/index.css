@@ -1029,6 +1029,315 @@ code {
   background: rgba(52, 183, 243, 0.07);
 }
 
+.flashcards-panel {
+  display: grid;
+  gap: 18px;
+}
+
+.flashcards-toolbar,
+.flashcard-composer,
+.flashcard-chooser,
+.flashcard-stage-shell {
+  display: grid;
+  gap: 16px;
+}
+
+.flashcard-status-banner {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  justify-self: start;
+  border: 1px solid rgba(117, 215, 249, 0.22);
+  border-radius: 999px;
+  padding: 10px 14px;
+  background: rgba(52, 183, 243, 0.12);
+  color: var(--text-main);
+  font-weight: 600;
+}
+
+.flashcard-status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 0 6px rgba(52, 183, 243, 0.18);
+}
+
+.flashcards-toolbar {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.flashcard-chooser {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.flashcard-mode-card,
+.flashcard-deck-card,
+.flashcard-manual-card,
+.flashcard-unit-option {
+  border: 1px solid rgba(117, 215, 249, 0.16);
+  border-radius: 18px;
+  background: rgba(9, 17, 34, 0.72);
+}
+
+.flashcard-mode-card {
+  display: grid;
+  gap: 10px;
+  padding: 18px;
+  text-align: left;
+  color: var(--text-main);
+}
+
+.flashcard-mode-card:hover {
+  border-color: rgba(117, 215, 249, 0.34);
+  background: rgba(18, 31, 55, 0.78);
+}
+
+.flashcard-mode-card p,
+.flashcard-unit-option p,
+.flashcard-deck-card p {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.flashcard-composer-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+}
+
+.flashcard-composer-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.flashcard-action-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.flashcard-unit-picker {
+  display: grid;
+  gap: 12px;
+}
+
+.flashcard-unit-grid,
+.flashcard-deck-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.flashcard-unit-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 14px;
+}
+
+.flashcard-unit-option input {
+  margin-top: 4px;
+}
+
+.flashcard-manual-list {
+  display: grid;
+  gap: 12px;
+}
+
+.flashcard-manual-card {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+}
+
+.flashcard-manual-card-header,
+.flashcard-stage-header,
+.flashcard-deck-card-header,
+.flashcard-deck-card-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.flashcard-deck-card {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+}
+
+.flashcard-deck-open {
+  display: grid;
+  gap: 10px;
+  text-align: left;
+  width: 100%;
+  border: 1px solid rgba(117, 215, 249, 0.24);
+  background: linear-gradient(135deg, #7dd3fc, #bae6fd);
+  color: #07131f;
+}
+
+.flashcard-deck-open strong,
+.flashcard-deck-open p {
+  color: #07131f;
+}
+
+.flashcard-deck-open:hover {
+  border-color: rgba(117, 215, 249, 0.4);
+  background: linear-gradient(135deg, #67e8f9, #a5f3fc);
+}
+
+.flashcard-deck-card-meta,
+.flashcard-deck-card-units {
+  overflow-wrap: anywhere;
+}
+
+.flashcard-stage {
+  display: grid;
+  justify-items: center;
+  min-height: 0;
+}
+
+.flashcard-viewer {
+  position: relative;
+  width: min(760px, 100%);
+  min-height: 420px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  perspective: 1400px;
+  color: var(--text-main);
+}
+
+.flashcard-face-label {
+  position: absolute;
+  top: 16px;
+  left: 18px;
+  z-index: 2;
+  border-radius: 999px;
+  background: rgba(10, 19, 36, 0.82);
+  color: var(--accent);
+  padding: 6px 10px;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.flashcard-viewer-inner {
+  position: relative;
+  width: 100%;
+  min-height: 420px;
+  transform-style: preserve-3d;
+  transition: transform 340ms ease;
+}
+
+.flashcard-viewer.flipped .flashcard-viewer-inner {
+  transform: rotateY(180deg);
+}
+
+.flashcard-face {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  padding: 58px 26px 28px;
+  border: 1px solid rgba(117, 215, 249, 0.18);
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at top left, rgba(52, 183, 243, 0.18), transparent 40%),
+    linear-gradient(180deg, rgba(16, 28, 50, 0.98), rgba(7, 14, 29, 0.95));
+  box-shadow: 0 26px 80px rgba(0, 0, 0, 0.3);
+  backface-visibility: hidden;
+  overflow: auto;
+}
+
+.flashcard-face-back {
+  transform: rotateY(180deg);
+}
+
+.flashcard-face-copy {
+  display: grid;
+  align-content: center;
+  min-height: 100%;
+}
+
+.flashcard-face-copy .chat-message-rich {
+  display: grid;
+  align-content: center;
+  min-height: 100%;
+  gap: 12px;
+}
+
+.flashcard-face-copy .chat-message-rich,
+.flashcard-face-copy .chat-message-rich * {
+  color: var(--text-main);
+}
+
+.flashcard-face-copy .chat-message-rich p,
+.flashcard-face-copy .chat-message-rich li {
+  font-size: clamp(1.05rem, 1.5vw, 1.35rem);
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+.flashcard-face-copy .chat-message-rich p:last-child {
+  margin-bottom: 0;
+}
+
+.flashcard-stage-footer {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.flashcard-nav-button {
+  min-width: 52px;
+  font-size: 1.2rem;
+}
+
+.flashcard-stage-shell:fullscreen {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 18px;
+  width: 100vw;
+  height: 100vh;
+  padding: 28px;
+  background:
+    radial-gradient(circle at top, rgba(14, 165, 233, 0.18), transparent 34%),
+    linear-gradient(180deg, rgba(5, 10, 21, 0.98), rgba(7, 14, 29, 1));
+  box-sizing: border-box;
+}
+
+.flashcard-stage-shell:fullscreen .flashcard-stage {
+  align-items: stretch;
+}
+
+.flashcard-stage-shell:fullscreen .flashcard-viewer {
+  width: min(1120px, 100%);
+  min-height: min(76vh, 920px);
+  justify-self: center;
+}
+
+.flashcard-stage-shell:fullscreen .flashcard-viewer-inner {
+  min-height: min(76vh, 920px);
+}
+
+.flashcard-stage-shell:fullscreen .flashcard-face {
+  padding: 72px 42px 38px;
+  border-radius: 32px;
+}
+
+.flashcard-stage-shell:fullscreen .flashcard-face-copy .chat-message-rich p,
+.flashcard-stage-shell:fullscreen .flashcard-face-copy .chat-message-rich li {
+  font-size: clamp(1.2rem, 1.7vw, 1.6rem);
+}
+
 .analysis-source-button {
   border-color: var(--line);
   background: rgba(8, 14, 31, 0.5);

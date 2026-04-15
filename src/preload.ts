@@ -3,8 +3,11 @@ import { contextBridge, ipcRenderer } from 'electron';
 import {
   type ChatAskInput,
   type AnalyzeSubjectInput,
+  type CreateFlashcardDeckInput,
   type DeletePracticeSetInput,
+  type DeleteFlashcardDeckInput,
   type GeneratePracticeInput,
+  type GenerateFlashcardsInput,
   IPC_CHANNELS,
   type CreateSubjectInput,
   type ImportDocumentsInput,
@@ -44,6 +47,12 @@ const api: StudyBudApi = {
     ipcRenderer.invoke(IPC_CHANNELS.PRACTICE_REVEAL, input),
   deletePracticeSet: (input: DeletePracticeSetInput) =>
     ipcRenderer.invoke(IPC_CHANNELS.PRACTICE_DELETE, input),
+  generateFlashcards: (input: GenerateFlashcardsInput) =>
+    ipcRenderer.invoke(IPC_CHANNELS.FLASHCARDS_GENERATE, input),
+  createFlashcardDeck: (input: CreateFlashcardDeckInput) =>
+    ipcRenderer.invoke(IPC_CHANNELS.FLASHCARDS_CREATE, input),
+  deleteFlashcardDeck: (input: DeleteFlashcardDeckInput) =>
+    ipcRenderer.invoke(IPC_CHANNELS.FLASHCARDS_DELETE, input),
   searchResearch: (input: ResearchSearchInput) =>
     ipcRenderer.invoke(IPC_CHANNELS.RESEARCH_SEARCH, input),
   navigateResearchBrowser: (input: ResearchBrowserNavigationInput) =>

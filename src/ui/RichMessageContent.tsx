@@ -170,6 +170,16 @@ const wrapMathLikeLines = (value: string): string => {
     .join('\n');
 };
 
+const normalizeLatexDelimiters = (value: string): string => {
+  return value
+    .replace(/\\\[((?:.|\n|\r)*?)\\\]/g, (_match, content: string) => {
+      return `$$${content.trim()}$$`;
+    })
+    .replace(/\\\(((?:.|\n|\r)*?)\\\)/g, (_match, content: string) => {
+      return `$${content.trim()}$`;
+    });
+};
+
 const applyPlainTextMathFallback = (value: string): string => {
   return value
     .split(/(\$\$[\s\S]*?\$\$|\$[^$]+\$)/g)
@@ -202,7 +212,9 @@ const normalizeMathFriendlyText = (value: string): string => {
           }
 
           const normalizedForLatex = wrapMathLikeLines(
-            normalizeUnicodeSubscripts(normalizeUnicodeSuperscripts(segment)),
+            normalizeLatexDelimiters(
+              normalizeUnicodeSubscripts(normalizeUnicodeSuperscripts(segment)),
+            ),
           );
 
           return applyPlainTextMathFallback(normalizedForLatex);

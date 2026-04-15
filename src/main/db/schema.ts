@@ -151,3 +151,32 @@ export const practiceSetSourcePagesTable = sqliteTable('practice_set_source_page
   pageId: text('page_id').notNull(),
   createdAt: integer('created_at').notNull(),
 });
+
+export const flashcardDecksTable = sqliteTable('flashcard_decks', {
+  id: text('id').primaryKey(),
+  subjectId: text('subject_id').notNull(),
+  title: text('title').notNull(),
+  creationMode: text('creation_mode').notNull(),
+  difficultyMode: text('difficulty_mode').notNull(),
+  cardCount: integer('card_count').notNull(),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+});
+
+export const flashcardDeckUnitsTable = sqliteTable('flashcard_deck_units', {
+  id: text('id').primaryKey(),
+  flashcardDeckId: text('flashcard_deck_id').notNull(),
+  divisionId: text('division_id').notNull(),
+  createdAt: integer('created_at').notNull(),
+});
+
+export const flashcardCardsTable = sqliteTable('flashcard_cards', {
+  id: text('id').primaryKey(),
+  flashcardDeckId: text('flashcard_deck_id').notNull(),
+  cardIndex: integer('card_index').notNull(),
+  front: text('front').notNull(),
+  back: text('back').notNull(),
+  difficulty: text('difficulty'),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+});

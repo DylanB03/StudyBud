@@ -6,7 +6,9 @@ import type {
   AppInfo,
   ChatAskResult,
   CitationRef,
+  FlashcardDeck,
   DocumentKind,
+  GenerateFlashcardsResult,
   GeneratePracticeResult,
   PracticeDifficulty,
   PracticeQuestion,
@@ -24,6 +26,7 @@ import type {
 import { CitationPreviewCard } from './CitationPreviewCard';
 import { DivisionChatPanel } from './DivisionChatPanel';
 import { DismissibleBanner } from './DismissibleBanner';
+import { FlashcardsPanel } from './FlashcardsPanel';
 import { NotificationCenter } from './NotificationCenter';
 import type { AppNotification } from './NotificationCenter';
 import { PracticePanel } from './PracticePanel';
@@ -76,7 +79,6 @@ const WORKSPACE_MAIN_MIN_WIDTH = 460;
 const WORKSPACE_RESIZER_WIDTH = 10;
 const WORKSPACE_GAP_TOTAL = 54;
 const LAST_WORKSPACE_SUBJECT_STORAGE_KEY = 'studybud.lastWorkspaceSubjectId';
-const LAST_UNIT_BY_SUBJECT_STORAGE_KEY = 'studybud.lastUnitBySubject';
 
 const initialSettings: SettingsState = {
   aiProvider: 'openai',
@@ -357,6 +359,8 @@ export const App = () => {
   const [practiceCount, setPracticeCount] = useState(3);
   const [practiceBusy, setPracticeBusy] = useState(false);
   const [practiceError, setPracticeError] = useState<string | null>(null);
+  const [flashcardsBusy, setFlashcardsBusy] = useState(false);
+  const [flashcardsError, setFlashcardsError] = useState<string | null>(null);
   const [lastPracticeRequest, setLastPracticeRequest] =
     useState<PracticeRetryRequest | null>(null);
   const [rightRailTab, setRightRailTab] = useState<WorkspaceRightTab>('chat');
@@ -402,18 +406,7 @@ export const App = () => {
     },
   );
   const [lastUnitBySubject, setLastUnitBySubject] = useState<Record<string, string>>(
-    () => {
-      if (typeof window === 'undefined') {
-        return {};
-      }
-
-      try {
-        const stored = window.localStorage.getItem(LAST_UNIT_BY_SUBJECT_STORAGE_KEY);
-        return stored ? (JSON.parse(stored) as Record<string, string>) : {};
-      } catch {
-        return {};
-      }
-    },
+    {},
   );
   const [isResizingChatPanel, setIsResizingChatPanel] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -558,17 +551,6 @@ export const App = () => {
 
     window.localStorage.removeItem(LAST_WORKSPACE_SUBJECT_STORAGE_KEY);
   }, [lastWorkspaceSubjectId]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    window.localStorage.setItem(
-      LAST_UNIT_BY_SUBJECT_STORAGE_KEY,
-      JSON.stringify(lastUnitBySubject),
-    );
-  }, [lastUnitBySubject]);
 
   useEffect(() => {
     const activeWorkspaceSubjectId = workspace?.subject.id ?? null;
@@ -2083,6 +2065,139 @@ export const App = () => {
       );
     } finally {
       setPracticeBusy(false);
+    }
+  };
+
+  const handleGenerateFlashcards = async (input: {
+    title: string;
+    divisionIds: string[];
+    count: number;
+  }) => {
+    if (!studybud || !workspace) {
+      return;
+    }
+
+    if (!analysisReady) {
+      setFlashcardsError(aiActionBlockedReason);
+      setError(aiActionBlockedReason);
+      return;
+    }
+
+    setFlashcardsBusy(true);
+    setFlashcardsError(null);
+    setError(null);
+
+    try {
+      const result: GenerateFlashcardsResult = await studybud.generateFlashcards({
+        subjectId: workspace.subject.id,
+        divisionIds: input.divisionIds,
+        count: input.count,
+        title: input.title.trim() || undefined,
+      });
+
+      setWorkspace((previous) =>
+        previous
+          ? {
+              ...previous,
+              flashcardDecks: [result.flashcardDeck, ...previous.flashcardDecks],
+            }
+          : previous,
+      );
+    } catch (caughtError) {
+      const message =
+        caughtError instanceof Error
+          ? caughtError.message
+          : 'Could not generate the flashcard deck.';
+      setFlashcardsError(message);
+      setError(message);
+    } finally {
+      setFlashcardsBusy(false);
+    }
+  };
+
+  const handleCreateManualFlashcardDeck = async (input: {
+    title: string;
+    divisionIds: string[];
+    cards: Array<{
+      front: string;
+      back: string;
+    }>;
+  }) => {
+    if (!studybud || !workspace) {
+      return;
+    }
+
+    setFlashcardsBusy(true);
+    setFlashcardsError(null);
+    setError(null);
+
+    try {
+      const result = await studybud.createFlashcardDeck({
+        subjectId: workspace.subject.id,
+        title: input.title,
+        divisionIds: input.divisionIds,
+        cards: input.cards,
+      });
+
+      setWorkspace((previous) =>
+        previous
+          ? {
+              ...previous,
+              flashcardDecks: [result.flashcardDeck, ...previous.flashcardDecks],
+            }
+          : previous,
+      );
+    } catch (caughtError) {
+      const message =
+        caughtError instanceof Error
+          ? caughtError.message
+          : 'Could not create the flashcard deck.';
+      setFlashcardsError(message);
+      setError(message);
+    } finally {
+      setFlashcardsBusy(false);
+    }
+  };
+
+  const handleDeleteFlashcardDeck = async (deck: FlashcardDeck) => {
+    if (!studybud) {
+      return;
+    }
+
+    const confirmed = window.confirm(`Delete the flashcard deck "${deck.title}"?`);
+
+    if (!confirmed) {
+      return;
+    }
+
+    setFlashcardsBusy(true);
+    setFlashcardsError(null);
+    setError(null);
+
+    try {
+      await studybud.deleteFlashcardDeck({
+        flashcardDeckId: deck.id,
+      });
+
+      setWorkspace((previous) =>
+        previous
+          ? {
+              ...previous,
+              flashcardDecks: previous.flashcardDecks.filter(
+                (item) => item.id !== deck.id,
+              ),
+            }
+          : previous,
+      );
+    } catch (caughtError) {
+      const message =
+        caughtError instanceof Error
+          ? caughtError.message
+          : 'Could not delete the flashcard deck.';
+      setFlashcardsError(message);
+      setError(message);
+    } finally {
+      setFlashcardsBusy(false);
     }
   };
 
@@ -3851,16 +3966,24 @@ export const App = () => {
                 )}
               </section>
             ) : unitsSidebarTab === 'flashcards' ? (
-              <section className="analysis-panel">
-                <div className="sidebar-section-title">
-                  <h3>Flashcards</h3>
-                  <span>soon</span>
-                </div>
-                <div className="empty-state">
-                  Flashcards are not implemented yet, but this tab is reserved for the
-                  next study mode.
-                </div>
-              </section>
+              <FlashcardsPanel
+                key={`${workspace.subject.id}:flashcards`}
+                units={units}
+                decks={workspace.flashcardDecks}
+                busy={flashcardsBusy}
+                aiActionsEnabled={analysisReady}
+                disabledReason={aiActionBlockedReason}
+                errorMessage={flashcardsError}
+                onGenerate={(input) => {
+                  void handleGenerateFlashcards(input);
+                }}
+                onCreateManual={(input) => {
+                  void handleCreateManualFlashcardDeck(input);
+                }}
+                onDeleteDeck={(deck) => {
+                  void handleDeleteFlashcardDeck(deck);
+                }}
+              />
             ) : !workspace.analysis ? (
               <section className="analysis-panel">
                 <div className="sidebar-section-title">
