@@ -129,8 +129,27 @@ const runJsonCommand = (
   });
 };
 
-const toWindowsBundleFolderName = (arch: string): string => {
-  return `windows-${arch}`;
+const getBundleFolderName = (
+  platform: NodeJS.Platform,
+  arch: string,
+): string | null => {
+  if (platform === 'win32') {
+    return `windows-${arch}`;
+  }
+  if (platform === 'darwin') {
+    return `darwin-${arch}`;
+  }
+  return null;
+};
+
+const getBundledExecutableFileName = (platform: NodeJS.Platform): string | null => {
+  if (platform === 'win32') {
+    return 'ocr_runner.exe';
+  }
+  if (platform === 'darwin') {
+    return 'ocr_runner';
+  }
+  return null;
 };
 
 export const getBundledOcrExecutableCandidatePaths = (input: {
@@ -139,17 +158,18 @@ export const getBundledOcrExecutableCandidatePaths = (input: {
   platform: NodeJS.Platform;
   arch: string;
 }): string[] => {
-  if (input.platform !== 'win32') {
+  const folderName = getBundleFolderName(input.platform, input.arch);
+  const executableName = getBundledExecutableFileName(input.platform);
+
+  if (!folderName || !executableName) {
     return [];
   }
 
-  const folderName = toWindowsBundleFolderName(input.arch);
-
   return [
     input.resourcesPath
-      ? path.join(input.resourcesPath, 'ocr-runtime', folderName, 'ocr_runner.exe')
+      ? path.join(input.resourcesPath, 'ocr-runtime', folderName, executableName)
       : null,
-    path.join(input.cwd, 'resources', 'ocr-runtime', folderName, 'ocr_runner.exe'),
+    path.join(input.cwd, 'resources', 'ocr-runtime', folderName, executableName),
   ].filter((candidate): candidate is string => typeof candidate === 'string');
 };
 
@@ -204,11 +224,14 @@ export const resolveOcrRuntimeDescriptor = (
   }
 
   if (input.isPackaged) {
+    const folderName = getBundleFolderName(input.platform, input.arch);
+    const detail = folderName
+      ? ` Expected a runtime at resources/ocr-runtime/${folderName}/.`
+      : ` OCR bundling is not yet supported on ${input.platform}.`;
     return {
       mode: 'unavailable',
       runtimePath: null,
-      message:
-        'Bundled OCR runtime was not found in the packaged app resources.',
+      message: `Bundled OCR runtime was not found in the packaged app resources.${detail}`,
     };
   }
 

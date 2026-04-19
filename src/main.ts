@@ -41,6 +41,7 @@ import {
 } from './main/db/database';
 import { summarizeExtractionConfidence } from './main/documents/extraction-confidence';
 import { runImportInUtilityProcess } from './main/documents/import-process';
+import { installApplicationMenu } from './main/menu/app-menu';
 import { detectOcrRuntime } from './main/ocr/runtime';
 import { ResearchBrowserController } from './main/research/browser';
 import { searchResearch } from './main/research/search';
@@ -1395,6 +1396,8 @@ const createWindow = () => {
   const x = Math.round(workArea.x + (workArea.width - width) / 2);
   const y = Math.round(workArea.y + (workArea.height - height) / 2);
 
+  const isMac = process.platform === 'darwin';
+
   mainWindow = new BrowserWindow({
     width,
     height,
@@ -1405,6 +1408,12 @@ const createWindow = () => {
     title: 'StudyBud',
     backgroundColor: '#0d1320',
     show: false,
+    ...(isMac
+      ? {
+          titleBarStyle: 'hiddenInset' as const,
+          trafficLightPosition: { x: 16, y: 16 },
+        }
+      : {}),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -1496,6 +1505,7 @@ app
   .whenReady()
   .then(async () => {
     await ensureInitialized();
+    installApplicationMenu();
     researchBrowser = new ResearchBrowserController({
       windowProvider: () => mainWindow,
       emitState: (state) => {

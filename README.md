@@ -67,9 +67,9 @@ Implemented roadmap phases:
 
 Important limitations:
 - OCR fallback is implemented for scanned/weak pages, but local OCR setup is still required in development
-- packaged bundled OCR is Windows-first and not fully produced from this Linux/WSL environment
+- packaged bundled OCR must be built on the target OS (Windows via `npm run build:ocr:win`, macOS via `npm run build:ocr:mac`)
 - AI quality depends heavily on provider/model choice
-- Windows is the primary intended target
+- Windows and macOS are the supported desktop targets; Linux packaging works but has no bundled OCR story yet
 - running inside WSL works for development but adds extra edge cases
 
 ## Tech Stack
@@ -150,6 +150,12 @@ sudo apt-get update
 sudo apt-get install -y tesseract-ocr
 ```
 
+On macOS, install it via Homebrew:
+
+```bash
+brew install tesseract
+```
+
 After that, StudyBud will prefer the repo-local `.venv` for OCR automatically.
 
 If native dependencies need repair for Node-side tests:
@@ -194,7 +200,15 @@ Windows OCR runtime build:
 npm run build:ocr:win
 ```
 
-This is the Windows-first step that freezes the OCR helper into a bundled runtime for packaged builds.
+macOS OCR runtime build:
+
+```bash
+npm run build:ocr:mac
+```
+
+Both steps freeze the OCR helper into a bundled runtime for packaged builds of
+that platform. Each must be run on the target OS (cross-compilation of the
+native Tesseract tree is not supported here).
 
 ## Verification Commands
 
@@ -423,7 +437,7 @@ How it works:
 Current OCR behavior:
 - development mode uses the Python OCR fallback in [`resources/ocr/ocr_runner.py`](./resources/ocr/ocr_runner.py)
 - the app prefers a repo-local `.venv` if present
-- packaged-mode bundled OCR is Windows-first and is expected under [`resources/ocr-runtime`](./resources/ocr-runtime)
+- packaged mode expects a bundled runtime under [`resources/ocr-runtime`](./resources/ocr-runtime): `windows-<arch>/ocr_runner.exe` on Windows, `darwin-<arch>/ocr_runner` on macOS
 
 Current Python OCR stack:
 - `PyMuPDF`
@@ -448,6 +462,77 @@ That can affect:
 - Ollama access if Ollama runs on Windows and Electron runs in WSL
 
 If something behaves strangely in WSL but not on Windows, treat that as a real possibility rather than assuming the app logic is wrong.
+
+## macOS Notes
+
+StudyBud supports macOS 11+ on both Apple Silicon and Intel.
+
+Prerequisites:
+
+```bash
+xcode-select --install
+brew install python tesseract
+```
+
+Create the Python OCR environment and install native modules for Electron:
+
+```bash
+npm install
+python3 -m venv .venv
+.venv/bin/pip install -r resources/ocr/requirements.txt pyinstaller
+npm run rebuild:native:electron
+```
+
+Development launch:
+
+```bash
+npm run dev
+```
+
+In dev mode, OCR uses the Python fallback in `.venv` and Homebrew's
+`tesseract` binary. `safeStorage` is backed by the macOS Keychain, so saved
+API keys are encrypted at rest just like on Windows.
+
+Build a bundled OCR runtime for packaging:
+
+```bash
+npm run build:ocr:mac
+```
+
+This produces `resources/ocr-runtime/darwin-<arch>/ocr_runner/` with a
+relocated Tesseract tree. The packaged app resolves it via
+`process.resourcesPath` at runtime.
+
+Package and make artifacts:
+
+```bash
+npm run package    # produces out/StudyBud-darwin-<arch>/StudyBud.app
+npm run make       # also emits a .zip and a .dmg under out/make/
+```
+
+Apple Silicon machines produce an `arm64` build; Intel machines produce an
+`x64` build. Cross-arch builds and universal (`arm64` + `x64`) binaries are
+not wired up in this repo.
+
+Distribution here is **unsigned** (no Apple Developer ID). First-launch
+quarantine must be cleared one way or the other:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/StudyBud.app
+```
+
+Alternatively, users can right-click the app in Finder, choose `Open`, and
+confirm the Gatekeeper prompt once. Signing and notarization hooks can be
+wired into `forge.config.ts` later by setting `osxSign` / `osxNotarize`.
+
+Verify the packaged OCR runtime once built:
+
+```bash
+./resources/ocr-runtime/darwin-arm64/ocr_runner --status
+```
+
+Expected healthy output is a JSON object with `"available": true` and an
+engine string mentioning `PyMuPDF + pytesseract`.
 
 ## Troubleshooting
 

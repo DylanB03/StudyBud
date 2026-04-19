@@ -22,7 +22,35 @@ describe('getBundledOcrExecutableCandidatePaths', () => {
     ]);
   });
 
-  it('returns no candidates for non-Windows platforms', () => {
+  it('returns packaged and dev executable candidates for macOS arm64', () => {
+    const candidates = getBundledOcrExecutableCandidatePaths({
+      cwd: '/repo',
+      resourcesPath: '/packaged/resources',
+      platform: 'darwin',
+      arch: 'arm64',
+    });
+
+    expect(candidates).toEqual([
+      path.join('/packaged/resources', 'ocr-runtime', 'darwin-arm64', 'ocr_runner'),
+      path.join('/repo', 'resources', 'ocr-runtime', 'darwin-arm64', 'ocr_runner'),
+    ]);
+  });
+
+  it('returns packaged and dev executable candidates for macOS x64', () => {
+    const candidates = getBundledOcrExecutableCandidatePaths({
+      cwd: '/repo',
+      resourcesPath: '/packaged/resources',
+      platform: 'darwin',
+      arch: 'x64',
+    });
+
+    expect(candidates).toEqual([
+      path.join('/packaged/resources', 'ocr-runtime', 'darwin-x64', 'ocr_runner'),
+      path.join('/repo', 'resources', 'ocr-runtime', 'darwin-x64', 'ocr_runner'),
+    ]);
+  });
+
+  it('returns no candidates for unsupported platforms (Linux)', () => {
     const candidates = getBundledOcrExecutableCandidatePaths({
       cwd: '/repo',
       resourcesPath: '/packaged/resources',
@@ -117,10 +145,70 @@ describe('resolveOcrRuntimeDescriptor', () => {
       existsSync: () => false,
     });
 
-    expect(descriptor).toEqual({
-      mode: 'unavailable',
-      runtimePath: null,
-      message: 'Bundled OCR runtime was not found in the packaged app resources.',
+    expect(descriptor.mode).toBe('unavailable');
+    expect(descriptor.runtimePath).toBeNull();
+    expect(descriptor.message).toContain(
+      'Bundled OCR runtime was not found in the packaged app resources.',
+    );
+    expect(descriptor.message).toContain('windows-x64');
+  });
+
+  it('prefers the bundled runtime for packaged macOS builds', () => {
+    const bundledPath = path.join(
+      '/Applications/StudyBud.app/Contents/Resources',
+      'ocr-runtime',
+      'darwin-arm64',
+      'ocr_runner',
+    );
+
+    const descriptor = resolveOcrRuntimeDescriptor({
+      isPackaged: true,
+      cwd: '/repo',
+      resourcesPath: '/Applications/StudyBud.app/Contents/Resources',
+      platform: 'darwin',
+      arch: 'arm64',
+      existsSync: (candidate) => candidate === bundledPath,
     });
+
+    expect(descriptor).toEqual({
+      mode: 'bundled',
+      executablePath: bundledPath,
+      runtimePath: bundledPath,
+      message: 'Using bundled OCR runtime.',
+    });
+  });
+
+  it('reports macOS-specific unavailable message when packaged bundled runtime is missing', () => {
+    const descriptor = resolveOcrRuntimeDescriptor({
+      isPackaged: true,
+      cwd: '/repo',
+      resourcesPath: '/Applications/StudyBud.app/Contents/Resources',
+      platform: 'darwin',
+      arch: 'arm64',
+      existsSync: () => false,
+    });
+
+    expect(descriptor.mode).toBe('unavailable');
+    expect(descriptor.runtimePath).toBeNull();
+    expect(descriptor.message).toContain('darwin-arm64');
+  });
+
+  it('uses python fallback in macOS development when only the script exists', () => {
+    const scriptPath = path.join('/repo', 'resources', 'ocr', 'ocr_runner.py');
+
+    const descriptor = resolveOcrRuntimeDescriptor({
+      isPackaged: false,
+      cwd: '/repo',
+      resourcesPath: null,
+      platform: 'darwin',
+      arch: 'arm64',
+      existsSync: (candidate) => candidate === scriptPath,
+    });
+
+    expect(descriptor.mode).toBe('python-fallback');
+    if (descriptor.mode !== 'python-fallback') {
+      throw new Error('Expected python fallback descriptor');
+    }
+    expect(descriptor.scriptPath).toBe(scriptPath);
   });
 });

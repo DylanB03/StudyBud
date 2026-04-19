@@ -4,13 +4,6 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const repoRoot = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
-const bundledRuntimePath = path.join(
-  repoRoot,
-  'resources',
-  'ocr-runtime',
-  `windows-${process.arch}`,
-  'ocr_runner.exe',
-);
 
 const runNodeScript = (scriptPath) => {
   return new Promise((resolve, reject) => {
@@ -35,16 +28,40 @@ const runNodeScript = (scriptPath) => {
   });
 };
 
+const platformConfigs = {
+  win32: {
+    folderName: `windows-${process.arch}`,
+    executableName: 'ocr_runner.exe',
+    builderScript: 'build-ocr-runtime-win.mjs',
+  },
+  darwin: {
+    folderName: `darwin-${process.arch}`,
+    executableName: 'ocr_runner',
+    builderScript: 'build-ocr-runtime-mac.mjs',
+  },
+};
+
 const main = async () => {
   if (process.env.STUDYBUD_SKIP_OCR_RUNTIME === '1') {
     console.log('Skipping OCR runtime preparation because STUDYBUD_SKIP_OCR_RUNTIME=1.');
     return;
   }
 
-  if (process.platform !== 'win32') {
-    console.log('Skipping bundled OCR runtime preparation on non-Windows platform.');
+  const config = platformConfigs[process.platform];
+  if (!config) {
+    console.log(
+      `Skipping bundled OCR runtime preparation on ${process.platform} (not yet supported).`,
+    );
     return;
   }
+
+  const bundledRuntimePath = path.join(
+    repoRoot,
+    'resources',
+    'ocr-runtime',
+    config.folderName,
+    config.executableName,
+  );
 
   if (
     fs.existsSync(bundledRuntimePath) &&
@@ -54,7 +71,7 @@ const main = async () => {
     return;
   }
 
-  await runNodeScript(path.join(repoRoot, 'scripts', 'build-ocr-runtime-win.mjs'));
+  await runNodeScript(path.join(repoRoot, 'scripts', config.builderScript));
 };
 
 main().catch((error) => {
