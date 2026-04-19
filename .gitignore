@@ -99,6 +99,11 @@ homework/
 #other
 .codex
 codex-context.md
+src-old/
+release-readiness.md
+roadmap.md
+studybud-plan.md
+stitch-references/
 
 #environment
 .venv/

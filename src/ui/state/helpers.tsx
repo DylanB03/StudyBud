@@ -9,12 +9,19 @@ import type {
   SourceDocumentDetail,
   SourceDocumentSummary,
   StudyBudApi,
-  SubjectAnalysisDivision,
   SubjectWorkspace,
-} from '../shared/ipc';
+} from '../../shared/ipc';
 
-export type View = 'library' | 'workspace' | 'units' | 'settings';
+export type View =
+  | 'library'
+  | 'workspace'
+  | 'units'
+  | 'flashcard-decks'
+  | 'flashcard-study'
+  | 'settings';
+
 export type UnitsSidebarTab = 'units' | 'documents' | 'flashcards';
+export type WorkspaceRightTab = 'chat' | 'research';
 
 export type ActiveAnalysisState = {
   provider: string;
@@ -28,7 +35,6 @@ export type SelectionPopupPosition = {
 };
 
 export type SelectionUiMode = 'chip' | 'popup';
-export type WorkspaceRightTab = 'chat' | 'research';
 
 export type ChatRetryRequest = {
   prompt: string;
@@ -127,7 +133,13 @@ export const renderHighlightedText = (
   }
 
   return parts.map((part, index) =>
-    expression.test(part) ? <mark key={`${part}:${index}`}>{part}</mark> : part,
+    expression.test(part) ? (
+      <mark key={`${part}:${index}`} className="bg-primary/15 text-on-surface">
+        {part}
+      </mark>
+    ) : (
+      part
+    ),
   );
 };
 
@@ -202,7 +214,10 @@ export const getDocumentOcrBadgeLabel = (
 };
 
 export const getDocumentOcrWarningMessage = (
-  document: Pick<SourceDocumentSummary, 'ocrState' | 'ocrWarning' | 'ocrAttemptedPages'>,
+  document: Pick<
+    SourceDocumentSummary,
+    'ocrState' | 'ocrWarning' | 'ocrAttemptedPages'
+  >,
 ): string | null => {
   if (document.ocrWarning) {
     return document.ocrWarning;
@@ -220,7 +235,10 @@ export const getDocumentOcrWarningMessage = (
 };
 
 export const getPageTextSourceLabel = (
-  page: Pick<SourceDocumentDetail['pages'][number], 'textSource' | 'ocrAttempted'>,
+  page: Pick<
+    SourceDocumentDetail['pages'][number],
+    'textSource' | 'ocrAttempted'
+  >,
 ): string | null => {
   if (!page.ocrAttempted) {
     return null;
@@ -265,6 +283,16 @@ export const getStudyBudApi = (): StudyBudApi | null => {
   return window.studybud ?? null;
 };
 
+export const requireStudyBudApi = (): StudyBudApi => {
+  const api = window.studybud;
+  if (!api) {
+    throw new Error(
+      'window.studybud is not available. The preload script may have failed to initialize.',
+    );
+  }
+  return api;
+};
+
 export const getNavigatorOnline = (): boolean => {
   if (typeof navigator === 'undefined') {
     return true;
@@ -275,4 +303,8 @@ export const getNavigatorOnline = (): boolean => {
 
 export const hasMeaningfulSelection = (): boolean => {
   return (window.getSelection()?.toString().trim().length ?? 0) > 0;
+};
+
+export const createNotificationId = (): string => {
+  return `notification-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 };

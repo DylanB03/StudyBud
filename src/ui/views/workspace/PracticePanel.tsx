@@ -5,8 +5,13 @@ import type {
   PracticeQuestion,
   PracticeSet,
   SubjectAnalysisDivision,
-} from '../shared/ipc';
-import { DismissibleBanner } from './DismissibleBanner';
+} from '../../../shared/ipc';
+import { Button } from '../../components/Button';
+import { Card } from '../../components/Card';
+import { Chip } from '../../components/Chip';
+import { DismissibleBanner } from '../../components/DismissibleBanner';
+import { FieldGroup, Input, Select } from '../../components/Input';
+import { Icon } from '../../components/Icon';
 
 type PracticePanelProps = {
   division: SubjectAnalysisDivision;
@@ -96,26 +101,26 @@ export const PracticePanel = ({
   };
 
   return (
-    <section className="analysis-panel practice-panel">
-      <div className="sidebar-section-title">
-        <h3>{heading}</h3>
-        <span>{practiceSets.length}</span>
-      </div>
+    <section className="flex flex-col gap-4">
+      <header className="flex items-center justify-between">
+        <h3 className="font-display text-title-md text-on-surface">{heading}</h3>
+        <Chip tone="secondary">{practiceSets.length}</Chip>
+      </header>
 
       {errorMessage ? (
         <DismissibleBanner
           dismissKey={`practice-error:${errorMessage}`}
-          className="panel-banner"
+          variant="error"
           action={
             onRetryGenerate ? (
-              <button
-                type="button"
-                className="ghost-button"
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={onRetryGenerate}
                 disabled={generateBusy}
               >
                 Retry
-              </button>
+              </Button>
             ) : null
           }
         >
@@ -124,14 +129,16 @@ export const PracticePanel = ({
       ) : null}
 
       {!aiActionsEnabled && disabledReason ? (
-        <div className="warning-banner">{disabledReason}</div>
+        <DismissibleBanner dismissKey={`practice-disabled:${disabledReason}`} variant="warning">
+          {disabledReason}
+        </DismissibleBanner>
       ) : null}
 
-      <div className="practice-generator-card">
-        <div className="practice-generator-grid">
-          <label>
-            <span className="label">Problem Type</span>
-            <select
+      <Card tone="lowest" elevated className="flex flex-col gap-4">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+          <FieldGroup label="Problem Type" htmlFor="practice-problem-type">
+            <Select
+              id="practice-problem-type"
               value={selectedProblemTypeId}
               onChange={(event) => onSelectedProblemTypeChange(event.target.value)}
               disabled={generateBusy || division.problemTypes.length === 0}
@@ -141,12 +148,12 @@ export const PracticePanel = ({
                   {problemType.title}
                 </option>
               ))}
-            </select>
-          </label>
+            </Select>
+          </FieldGroup>
 
-          <label>
-            <span className="label">Difficulty</span>
-            <select
+          <FieldGroup label="Difficulty" htmlFor="practice-difficulty">
+            <Select
+              id="practice-difficulty"
               value={difficulty}
               onChange={(event) =>
                 onDifficultyChange(event.target.value as PracticeDifficulty)
@@ -156,12 +163,12 @@ export const PracticePanel = ({
               <option value="easy">Easy</option>
               <option value="medium">Medium</option>
               <option value="hard">Hard</option>
-            </select>
-          </label>
+            </Select>
+          </FieldGroup>
 
-          <label>
-            <span className="label">Question Count</span>
-            <input
+          <FieldGroup label="Question Count" htmlFor="practice-count">
+            <Input
+              id="practice-count"
               type="number"
               min={1}
               max={8}
@@ -169,144 +176,161 @@ export const PracticePanel = ({
               onChange={(event) => onCountChange(Number(event.target.value) || 1)}
               disabled={generateBusy}
             />
-          </label>
+          </FieldGroup>
         </div>
 
-        <div className="practice-generator-actions">
-          <button
-            type="button"
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <Button
             onClick={onGenerate}
             disabled={!canGenerate || !aiActionsEnabled}
+            loading={generateBusy}
+            leadingIcon={<Icon name="bolt" size="sm" />}
           >
             {generateBusy ? 'Generating Practice...' : 'Generate Practice'}
-          </button>
-          <p className="analysis-muted">
+          </Button>
+          <p className="font-body text-label-md text-on-surface-variant">
             {generateHelperText}
           </p>
         </div>
-      </div>
+      </Card>
 
       {division.problemTypes.length === 0 ? (
-        <div className="empty-state">{emptyStateWithoutProblemTypes}</div>
+        <Card tone="default" className="text-center font-body text-body-md text-on-surface-variant">
+          {emptyStateWithoutProblemTypes}
+        </Card>
       ) : practiceSets.length === 0 ? (
-        <div className="empty-state">{emptyStateWithoutSets}</div>
+        <Card tone="default" className="text-center font-body text-body-md text-on-surface-variant">
+          {emptyStateWithoutSets}
+        </Card>
       ) : (
-        <div className="practice-set-list">
+        <div className="flex flex-col gap-3">
           {practiceSets.map((practiceSet) => (
-            <article key={practiceSet.id} className="practice-set-card">
-              <div className="analysis-division-header">
-                <div>
+            <Card
+              key={practiceSet.id}
+              tone="lowest"
+              elevated
+              className="flex flex-col gap-4"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="flex-1">
                   <button
                     type="button"
-                    className="practice-set-toggle"
                     onClick={() => toggleCollapsed(practiceSet.id)}
+                    className="flex items-center gap-2 font-display text-title-sm text-on-surface"
                   >
-                    <span className="practice-set-toggle-arrow" aria-hidden="true">
-                      {collapsedSets[practiceSet.id] ? '▸' : '▾'}
-                    </span>
+                    <Icon
+                      name={collapsedSets[practiceSet.id] ? 'chevron_right' : 'expand_more'}
+                      size="sm"
+                      aria-hidden
+                    />
                     <span>{practiceSet.problemTypeTitle}</span>
                   </button>
-                  <p>
+                  <p className="mt-1 font-body text-label-md text-on-surface-variant">
                     {practiceSet.difficulty} difficulty • {practiceSet.questionCount}{' '}
                     question{practiceSet.questionCount === 1 ? '' : 's'} • generated{' '}
                     {formatDateTime(practiceSet.createdAt)}
                   </p>
-                  <p>
+                  <p className="font-body text-label-md text-on-surface-variant">
                     Based on {practiceSet.sourcePages.length} source page
                     {practiceSet.sourcePages.length === 1 ? '' : 's'}
                   </p>
                 </div>
-                <div className="practice-set-actions">
-                  <span className="analysis-count-pill">{practiceSet.difficulty}</span>
-                  <button
-                    type="button"
-                    className="ghost-button"
+                <div className="flex flex-wrap items-center gap-2">
+                  <Chip tone="tertiary">{practiceSet.difficulty}</Chip>
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     onClick={() => onRegeneratePracticeSet(practiceSet)}
                     disabled={generateBusy}
                   >
                     Regenerate
-                  </button>
-                  <button
-                    type="button"
-                    className="ghost-button"
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     onClick={() => onDeletePracticeSet(practiceSet)}
                     disabled={generateBusy}
                   >
                     Delete
-                  </button>
+                  </Button>
                 </div>
               </div>
 
               {!collapsedSets[practiceSet.id] ? (
-                <div className="practice-question-list">
+                <div className="flex flex-col gap-3">
                   {practiceSet.questions.map((question) => (
-                    <article key={question.id} className="practice-question-card">
-                    <div className="practice-question-header">
-                      <strong>Question {question.questionIndex}</strong>
-                      <div className="practice-question-actions">
-                        <button
-                          type="button"
-                          className="ghost-button"
+                    <article
+                      key={question.id}
+                      className="rounded-card-sm bg-surface-container-low p-4"
+                    >
+                      <header className="mb-2 flex items-center justify-between gap-2">
+                        <strong className="font-display text-title-sm text-on-surface">
+                          Question {question.questionIndex}
+                        </strong>
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           onClick={() => onExplainQuestion(practiceSet, question)}
                           disabled={chatBusy || !aiActionsEnabled}
                         >
                           Explain Question
-                        </button>
-                      </div>
-                    </div>
-
-                    <p
-                      className="practice-question-copy"
-                      onMouseUp={() => onQuestionSelection(practiceSet, question)}
-                    >
-                      {question.prompt}
-                    </p>
-
-                    {!question.revealed ? (
-                      <button
-                        type="button"
-                        className="ghost-button"
-                        onClick={() => onRevealAnswer(question.id)}
-                        disabled={generateBusy}
+                        </Button>
+                      </header>
+                      <p
+                        className="font-body text-body-md text-on-surface"
+                        onMouseUp={() => onQuestionSelection(practiceSet, question)}
                       >
-                        Show Answer Key
-                      </button>
-                    ) : (
-                      <div className="practice-answer-panel">
-                        <div className="practice-question-header">
-                          <strong>Answer Key</strong>
-                          <div className="practice-question-actions">
-                            <button
-                              type="button"
-                              className="ghost-button"
-                              onClick={() => onRevealAnswer(question.id)}
-                              disabled={generateBusy}
-                            >
-                              Hide Answer Key
-                            </button>
-                            <button
-                              type="button"
-                              className="ghost-button"
-                              onClick={() => onExplainAnswer(practiceSet, question)}
-                              disabled={chatBusy || !aiActionsEnabled}
-                            >
-                              Explain Answer
-                            </button>
-                          </div>
-                        </div>
-                        <p
-                          className="practice-answer-copy"
-                          onMouseUp={() => onAnswerSelection(practiceSet, question)}
+                        {question.prompt}
+                      </p>
+
+                      {!question.revealed ? (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          className="mt-3"
+                          onClick={() => onRevealAnswer(question.id)}
+                          disabled={generateBusy}
                         >
-                          {question.answer}
-                        </p>
-                      </div>
-                    )}
+                          Show Answer Key
+                        </Button>
+                      ) : (
+                        <div className="mt-3 rounded-card-sm bg-surface-container p-3">
+                          <header className="mb-2 flex items-center justify-between gap-2">
+                            <strong className="font-display text-title-sm text-on-surface">
+                              Answer Key
+                            </strong>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => onRevealAnswer(question.id)}
+                                disabled={generateBusy}
+                              >
+                                Hide Answer Key
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => onExplainAnswer(practiceSet, question)}
+                                disabled={chatBusy || !aiActionsEnabled}
+                              >
+                                Explain Answer
+                              </Button>
+                            </div>
+                          </header>
+                          <p
+                            className="font-body text-body-md text-on-surface"
+                            onMouseUp={() => onAnswerSelection(practiceSet, question)}
+                          >
+                            {question.answer}
+                          </p>
+                        </div>
+                      )}
                     </article>
                   ))}
                 </div>
               ) : null}
-            </article>
+            </Card>
           ))}
         </div>
       )}

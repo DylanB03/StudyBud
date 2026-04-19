@@ -7,12 +7,14 @@ import type {
   RenderTask,
 } from 'pdfjs-dist/types/src/display/api';
 
-import type { CitationRef } from '../shared/ipc';
+import type { CitationRef } from '../../../shared/ipc';
+import { Chip } from '../../components/Chip';
+import { cn } from '../../theme/cn';
 import {
   clonePdfBytes,
   ensurePdfJsWorkerConfigured,
   isExpectedPdfTearDownError,
-} from './pdf-viewer-utils';
+} from '../../state/pdf-viewer-utils';
 
 ensurePdfJsWorkerConfigured();
 
@@ -21,17 +23,14 @@ const renderPreviewPage = async (
   page: PDFPageProxy,
 ): Promise<RenderTask> => {
   const baseViewport = page.getViewport({ scale: 1 });
-  const scale = 180 / baseViewport.width;
+  const scale = 220 / baseViewport.width;
   const viewport = page.getViewport({ scale });
   const context = canvas.getContext('2d');
-
   if (!context) {
     throw new Error('Canvas rendering context is unavailable');
   }
-
   canvas.width = viewport.width;
   canvas.height = viewport.height;
-
   const renderTask = page.render({
     canvas,
     canvasContext: context,
@@ -49,6 +48,9 @@ type CitationPreviewCardProps = {
   onTextSelection?: (citation: CitationRef) => void;
 };
 
+const kindTone = (kind: CitationRef['documentKind']): 'primary' | 'tertiary' =>
+  kind === 'lecture' ? 'primary' : 'tertiary';
+
 export const CitationPreviewCard = ({
   citation,
   documentBytes,
@@ -57,7 +59,7 @@ export const CitationPreviewCard = ({
   onTextSelection,
 }: CitationPreviewCardProps) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const [previewError, setPreviewError] = useState(false);
+  const [previewError, setPreviewError] = useState<boolean>(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -70,30 +72,26 @@ export const CitationPreviewCard = ({
       if (!canvas || !documentBytes) {
         return;
       }
-
       try {
         loadingTask = getDocument({
           data: clonePdfBytes(documentBytes),
           isEvalSupported: false,
         });
         pdfDocument = await loadingTask.promise;
-
         if (cancelled) {
           await pdfDocument.destroy().catch(() => undefined);
           return;
         }
-
         const page = await pdfDocument.getPage(citation.pageNumber);
         if (cancelled) {
           page.cleanup();
           await pdfDocument.destroy().catch(() => undefined);
           return;
         }
-
         renderTask = await renderPreviewPage(canvas, page);
         setPreviewError(false);
-      } catch (error) {
-        if (!cancelled && !isExpectedPdfTearDownError(error)) {
+      } catch (err) {
+        if (!cancelled && !isExpectedPdfTearDownError(err)) {
           setPreviewError(true);
         }
       }
@@ -115,7 +113,6 @@ export const CitationPreviewCard = ({
     if ((window.getSelection()?.toString().trim().length ?? 0) > 0) {
       return;
     }
-
     onClick();
   };
 
@@ -123,38 +120,57 @@ export const CitationPreviewCard = ({
     if ((window.getSelection()?.toString().trim().length ?? 0) === 0) {
       return;
     }
-
     onTextSelection?.(citation);
   };
 
   return (
     <button
       type="button"
-      className={`citation-card${active ? ' active' : ''}`}
       onClick={handleCardClick}
+      className={cn(
+        'group flex flex-col gap-3 rounded-card border p-3 text-left transition-all duration-200',
+        'bg-surface-container-lowest border-outline-variant/40 hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-soft',
+        active
+          ? 'border-primary/80 shadow-elevated ring-2 ring-primary/30'
+          : '',
+      )}
     >
-      <div className="citation-thumb-shell">
+      <div className="relative aspect-[3/4] w-full overflow-hidden rounded-lg bg-surface-container-high">
         {documentBytes && !previewError ? (
-          <canvas ref={canvasRef} className="citation-preview-canvas" />
+          <canvas
+            ref={canvasRef}
+            className="h-full w-full object-contain"
+          />
         ) : (
-          <div className="citation-preview-placeholder">
+          <div className="flex h-full w-full items-center justify-center px-3 text-center font-body text-body-xs text-on-surface-variant">
             {previewError ? 'Preview unavailable' : 'Loading preview...'}
           </div>
         )}
+        <span className="absolute right-2 top-2 rounded-full bg-surface-container-lowest/90 px-2 py-0.5 font-display text-body-xs font-bold text-on-surface shadow-soft backdrop-blur">
+          p.{citation.pageNumber}
+        </span>
       </div>
-
-      <div className="citation-card-copy" onMouseUp={handleTextMouseUp}>
-        <div className="citation-card-meta">
-          <span className={`pill pill-${citation.documentKind}`}>
+      <div
+        className="flex flex-col gap-2"
+        onMouseUp={handleTextMouseUp}
+      >
+        <div className="flex flex-wrap items-center gap-2">
+          <Chip
+            tone={kindTone(citation.documentKind)}
+            className="px-2 py-0.5 text-body-xs"
+          >
             {citation.documentKind}
-          </span>
-          {active ? <span className="analysis-count-pill">Focused</span> : null}
-          <strong className="citation-doc-name">
-            {citation.documentName}
-          </strong>
-          <span>Page {citation.pageNumber}</span>
+          </Chip>
+          {active ? (
+            <Chip tone="secondary" className="px-2 py-0.5 text-body-xs">
+              Focused
+            </Chip>
+          ) : null}
         </div>
-        <p className="citation-excerpt">
+        <strong className="font-display text-body-sm text-on-surface">
+          {citation.documentName}
+        </strong>
+        <p className="line-clamp-3 font-body text-body-xs text-on-surface-variant">
           {citation.excerptText || 'No excerpt available for this page.'}
         </p>
       </div>
