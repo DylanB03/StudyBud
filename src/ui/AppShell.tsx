@@ -10,6 +10,7 @@ import { LibraryView } from './views/LibraryView';
 import { SettingsView } from './views/SettingsView';
 import { FlashcardDecksView } from './views/flashcards/FlashcardDecksView';
 import { FlashcardStudyView } from './views/flashcards/FlashcardStudyView';
+import { DocumentsView } from './views/documents/DocumentsView';
 import { UnitsView } from './views/units/UnitsView';
 import { WorkspaceView } from './views/workspace/WorkspaceView';
 
@@ -57,6 +58,13 @@ export const AppShell = () => {
           onClick: () => setActiveView('units'),
         },
         {
+          id: 'documents',
+          label: 'Documents',
+          icon: 'description',
+          isActive: activeView === 'documents',
+          onClick: () => setActiveView('documents'),
+        },
+        {
           id: 'flashcards',
           label: 'Flashcards',
           icon: 'style',
@@ -92,6 +100,7 @@ export const AppShell = () => {
           {activeView === 'library' && <LibraryView />}
           {activeView === 'workspace' && <WorkspaceView />}
           {activeView === 'units' && <UnitsView />}
+          {activeView === 'documents' && <DocumentsView />}
           {activeView === 'flashcard-decks' && <FlashcardDecksView />}
           {activeView === 'flashcard-study' && <FlashcardStudyView />}
           {activeView === 'settings' && <SettingsView />}

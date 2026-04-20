@@ -3,7 +3,6 @@ import { Chip } from '../../components/Chip';
 import { Icon } from '../../components/Icon';
 import { useAppState } from '../../state/AppState';
 import { useSettings } from '../../state/SettingsState';
-import { useSubjects } from '../../state/SubjectsState';
 import { useWorkspace } from '../../state/WorkspaceState';
 
 type WorkspaceHeaderProps = {
@@ -11,14 +10,11 @@ type WorkspaceHeaderProps = {
 };
 
 export const WorkspaceHeader = ({ subjectName }: WorkspaceHeaderProps) => {
-  const { setActiveView, isOnline } = useAppState();
-  const { setActive } = useSubjects();
+  const { isOnline } = useAppState();
   const { settings } = useSettings();
   const {
     workspace,
-    importDocuments,
     analyze,
-    importingKind,
     analysisState,
   } = useWorkspace();
 
@@ -29,23 +25,9 @@ export const WorkspaceHeader = ({ subjectName }: WorkspaceHeaderProps) => {
       ? settings.openAiApiKeyConfigured && isOnline
       : settings.ollamaModel.trim().length > 0;
 
-  const handleBack = () => {
-    setActive(null);
-    setActiveView('library');
-  };
-
   return (
     <header className="flex flex-col gap-4 px-8 py-6 lg:flex-row lg:items-end lg:justify-between">
       <div className="flex flex-col gap-3">
-        <Button
-          variant="ghost"
-          size="sm"
-          leadingIcon={<Icon name="arrow_back" size="sm" />}
-          onClick={handleBack}
-          className="self-start -ml-2"
-        >
-          Back to Library
-        </Button>
         <div>
           <h1 className="font-display text-display-sm font-extrabold tracking-tight text-on-surface">
             {subjectName}
@@ -82,24 +64,6 @@ export const WorkspaceHeader = ({ subjectName }: WorkspaceHeaderProps) => {
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <Button
-          variant="secondary"
-          size="sm"
-          leadingIcon={<Icon name="upload_file" size="sm" />}
-          loading={importingKind === 'lecture'}
-          onClick={() => void importDocuments('lecture')}
-        >
-          Import lectures
-        </Button>
-        <Button
-          variant="secondary"
-          size="sm"
-          leadingIcon={<Icon name="assignment" size="sm" />}
-          loading={importingKind === 'homework'}
-          onClick={() => void importDocuments('homework')}
-        >
-          Import homework
-        </Button>
         <Button
           variant="primary"
           size="sm"

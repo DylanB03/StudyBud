@@ -34,7 +34,7 @@ type AnalysisCanvasProps = {
 };
 
 export const AnalysisCanvas = ({ documentViewerRef }: AnalysisCanvasProps) => {
-  const { isOnline } = useAppState();
+  const { isOnline, setActiveView } = useAppState();
   const { settings } = useSettings();
   const {
     workspace,
@@ -60,7 +60,6 @@ export const AnalysisCanvas = ({ documentViewerRef }: AnalysisCanvasProps) => {
     setSelectedCitationKey,
     rightRailTab,
     chatBusy,
-    importDocuments,
     selectDocument,
     setSelectedPage,
     selectedDocumentId,
@@ -193,24 +192,14 @@ export const AnalysisCanvas = ({ documentViewerRef }: AnalysisCanvasProps) => {
             the text, then AI-generates units, key concepts, and practice
             material.
           </p>
-          <div className="flex flex-wrap items-center justify-center gap-2">
-            <Button
-              variant="primary"
-              size="sm"
-              leadingIcon={<Icon name="upload_file" size="sm" />}
-              onClick={() => void importDocuments('lecture')}
-            >
-              Import lectures
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              leadingIcon={<Icon name="assignment" size="sm" />}
-              onClick={() => void importDocuments('homework')}
-            >
-              Import homework
-            </Button>
-          </div>
+          <Button
+            variant="primary"
+            size="sm"
+            leadingIcon={<Icon name="description" size="sm" />}
+            onClick={() => setActiveView('documents')}
+          >
+            Go to Documents
+          </Button>
         </div>
       ) : !anyReady ? (
         <div className="rounded-card border border-outline-variant/40 bg-surface-container-lowest px-6 py-8 text-center">

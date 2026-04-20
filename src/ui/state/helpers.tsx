@@ -16,6 +16,7 @@ export type View =
   | 'library'
   | 'workspace'
   | 'units'
+  | 'documents'
   | 'flashcard-decks'
   | 'flashcard-study'
   | 'settings';

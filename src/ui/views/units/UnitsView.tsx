@@ -45,6 +45,8 @@ export const UnitsView = () => {
     [workspace],
   );
 
+  const hasDocuments = (workspace?.documents.length ?? 0) > 0;
+
   if (!activeSubject) {
     return (
       <main className="flex flex-1 items-center justify-center px-8 py-16">
@@ -86,43 +88,15 @@ export const UnitsView = () => {
   return (
     <main className="flex-1 overflow-y-auto bg-surface pt-4">
       <div className="mx-auto max-w-6xl px-8 py-12">
-        <header className="mb-12 flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
-          <div>
-            <button
-              type="button"
-              onClick={() => setActiveView('workspace')}
-              className="mb-3 inline-flex items-center gap-1.5 font-body text-body-sm text-primary hover:opacity-80"
-            >
-              <Icon name="arrow_back" size="xs" />
-              Back to subject
-            </button>
-            <h1 className="font-display text-title-lg font-extrabold tracking-tight text-on-surface md:text-[2.75rem]">
-              {activeSubject.name} units
-            </h1>
-            <p className="mt-3 max-w-2xl font-body text-body-md leading-relaxed text-on-surface-variant">
-              A comprehensive breakdown of this subject. Each unit groups
-              related source pages, key concepts, and problem types you can
-              study in the workspace.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <Button
-              variant="secondary"
-              size="md"
-              leadingIcon={<Icon name="arrow_back" size="sm" />}
-              onClick={() => setActiveView('workspace')}
-            >
-              Back to workspace
-            </Button>
-            <Button
-              variant="tertiary"
-              size="md"
-              leadingIcon={<Icon name="style" size="sm" filled />}
-              onClick={() => setActiveView('flashcard-decks')}
-            >
-              Flashcards
-            </Button>
-          </div>
+        <header className="mb-12">
+          <h1 className="font-display text-title-lg font-extrabold tracking-tight text-on-surface md:text-[2.75rem]">
+            {activeSubject.name} units
+          </h1>
+          <p className="mt-3 max-w-2xl font-body text-body-md leading-relaxed text-on-surface-variant">
+            A comprehensive breakdown of this subject. Each unit groups
+            related source pages, key concepts, and problem types you can
+            study in the workspace.
+          </p>
         </header>
 
         {error ? (
@@ -157,7 +131,22 @@ export const UnitsView = () => {
           </div>
         ) : null}
 
-        {!workspace?.analysis ? (
+        {!hasDocuments ? (
+          <EmptyUnits
+            title="Upload documents to get started"
+            description="Import lecture slides and homework assignments first. Once you have documents, run subject analysis to generate AI-powered units, key concepts, and practice material."
+            icon="upload_file"
+            action={
+              <Button
+                variant="primary"
+                leadingIcon={<Icon name="description" size="sm" />}
+                onClick={() => setActiveView('documents')}
+              >
+                Go to Documents
+              </Button>
+            }
+          />
+        ) : !workspace?.analysis ? (
           <EmptyUnits
             title="This subject hasn't been analyzed yet"
             description="Run subject analysis from the workspace to generate AI units, key concepts, and problem types."
@@ -329,12 +318,13 @@ const UnitCard = ({ unit, index, featured, onOpen }: UnitCardProps) => {
 type EmptyUnitsProps = {
   title: string;
   description: string;
+  icon?: string;
   action?: React.ReactNode;
 };
 
-const EmptyUnits = ({ title, description, action }: EmptyUnitsProps) => (
+const EmptyUnits = ({ title, description, icon, action }: EmptyUnitsProps) => (
   <div className="flex flex-col items-center gap-4 rounded-card border border-dashed border-outline-variant/30 bg-surface-container-low px-8 py-16 text-center">
-    <Icon name="category" size="xl" className="text-on-surface-variant/40" />
+    <Icon name={icon ?? 'category'} size="xl" className="text-on-surface-variant/40" />
     <h2 className="font-display text-title-sm font-bold text-on-surface">
       {title}
     </h2>

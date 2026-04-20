@@ -143,34 +143,14 @@ export const FlashcardDecksView = () => {
   return (
     <main className="flex-1 overflow-y-auto bg-surface pt-4">
       <div className="mx-auto max-w-6xl px-8 py-12">
-        <header className="mb-10 flex flex-col gap-4">
-          <button
-            type="button"
-            onClick={() => setActiveView('workspace')}
-            className="inline-flex w-fit items-center gap-1.5 font-body text-body-sm text-primary hover:opacity-80"
-          >
-            <Icon name="arrow_back" size="xs" />
-            Back to workspace
-          </button>
-          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-            <div>
-              <h1 className="font-display text-title-lg font-extrabold tracking-tight text-on-surface md:text-[2.5rem]">
-                {activeSubject.name} flashcards
-              </h1>
-              <p className="mt-2 max-w-2xl font-body text-body-md text-on-surface-variant">
-                Build your own cards, or generate a mixed-difficulty deck from
-                any combination of units.
-              </p>
-            </div>
-            <Button
-              variant="tertiary"
-              size="md"
-              leadingIcon={<Icon name="category" size="sm" />}
-              onClick={() => setActiveView('units')}
-            >
-              Browse units
-            </Button>
-          </div>
+        <header className="mb-10">
+          <h1 className="font-display text-title-lg font-extrabold tracking-tight text-on-surface md:text-[2.5rem]">
+            {activeSubject.name} flashcards
+          </h1>
+          <p className="mt-2 max-w-2xl font-body text-body-md text-on-surface-variant">
+            Build your own cards, or generate a mixed-difficulty deck from
+            any combination of units.
+          </p>
         </header>
 
         {error ? (
