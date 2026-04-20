@@ -71,15 +71,14 @@ export const SelectionOverlay = () => {
         >
           Ask about this
         </Button>
-        <Button
-          size="icon"
-          variant="ghost"
+        <button
+          type="button"
           onClick={clearSelection}
           aria-label="Dismiss selection"
-          className="h-8 w-8"
+          className="flex h-8 w-8 items-center justify-center rounded-full text-on-surface-variant transition-all hover:bg-error/10 hover:text-error focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-error/40"
         >
           <Icon name="close" size="sm" />
-        </Button>
+        </button>
       </div>
     );
   }
@@ -98,16 +97,15 @@ export const SelectionOverlay = () => {
         <strong className="font-display text-body-md text-on-surface">
           Ask about selection
         </strong>
-        <Button
-          size="icon"
-          variant="ghost"
+        <button
+          type="button"
           onClick={clearSelection}
           disabled={chatBusy}
           aria-label="Dismiss"
-          className="h-7 w-7"
+          className="flex h-7 w-7 items-center justify-center rounded-full text-on-surface-variant transition-all hover:bg-error/10 hover:text-error focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-error/40 disabled:opacity-50"
         >
           <Icon name="close" size="sm" />
-        </Button>
+        </button>
       </div>
       <p className="font-body text-body-xs text-on-surface-variant">
         {selectionDraft.kind === 'division-summary'
