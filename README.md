@@ -1,598 +1,227 @@
 # StudyBud
 
-StudyBud is an Electron desktop app for turning lecture PDFs and homework PDFs into a structured study workspace.
+AI-powered desktop app that turns lecture and homework PDFs into a structured study workspace with division-based analysis, grounded chat, flashcards, practice generation, and in-app research.
 
-At a high level, the app lets a student:
-- create subjects/classes
-- import lecture and homework PDFs into each subject
-- extract readable text from those PDFs
-- run AI analysis to break the material into divisions/study units
-- browse cited lecture/homework pages for each division
-- ask grounded questions about a division or highlighted text
-- create and study flashcard decks
-- generate practice problems by problem type and difficulty
-- research related websites and videos from inside the workspace
+Electron / React / TypeScript / SQLite / Vite / PDF.js / OpenAI / Ollama
 
-## What StudyBud Does
+---
 
-StudyBud is designed around a local workspace with AI-assisted study features layered on top.
+## Table of Contents
 
-Current implemented capabilities:
-- subject library with create, open, and delete
-- local persistence with SQLite
-- lecture/homework PDF import into app-managed storage
-- PDF page rendering and extracted page text previews
-- AI subject analysis into:
-  - divisions
-  - summaries
-  - key concepts
-  - problem types
-  - unassigned pages
-- division-first study workspace
-- cited source-page previews with click-through into the PDF viewer
-- grounded division chat
-- selection-based clarification from:
-  - division summaries
-  - key concepts
-  - problem types
-  - cited excerpts
-  - extracted page text
-  - division chat messages
-  - practice questions and answers
-- flashcards with:
-  - AI-generated mixed-difficulty decks from selected units
-  - manual deck creation
-  - saved deck library per subject
-  - fullscreen card study mode
-  - click-to-flip question/answer cards
-- practice generation by problem type and difficulty
-- reveal/hide answer keys
-- research tab with:
-  - suggested web queries
-  - suggested video queries
-  - in-app browser
-  - external website/video opening
+- [Features](#features)
+- [Architecture](#architecture)
+- [Quick Start](#quick-start)
+- [Platform Guides](#platform-guides)
+  - [Windows](#windows)
+  - [macOS](#macos)
+  - [Linux / WSL](#linux--wsl)
+- [AI Providers](#ai-providers)
+- [OCR](#ocr)
+- [Scripts Reference](#scripts-reference)
+- [Troubleshooting](#troubleshooting)
+- [License](#license)
 
-## Current Product Status
+---
 
-Implemented roadmap phases:
-- Phase 0: foundation
-- Phase 1: import + PDF pipeline
-- Phase 2: AI subject analysis
-- Phase 3: division workspace + citations
-- Phase 4: grounded chat + selection clarification
-- Phase 5: practice generation
-- Phase 6: research workflow
-- Phase 7: release hardening and UX stabilization
+## Features
 
-Important limitations:
-- OCR fallback is implemented for scanned/weak pages, but local OCR setup is still required in development
-- packaged bundled OCR must be built on the target OS (Windows via `npm run build:ocr:win`, macOS via `npm run build:ocr:mac`)
-- AI quality depends heavily on provider/model choice
-- Windows and macOS are the supported desktop targets; Linux packaging works but has no bundled OCR story yet
-- running inside WSL works for development but adds extra edge cases
+- **PDF import** with automatic text extraction and selective OCR for scanned pages
+- **AI subject analysis** that breaks material into divisions, summaries, key concepts, and problem types
+- **Grounded chat** scoped to divisions or highlighted text, with cited source pages
+- **Flashcards** -- AI-generated or manually authored, with fullscreen flip-card study mode
+- **Practice generation** by problem type and difficulty, with revealable answer keys
+- **Research tab** with suggested queries, video results, and an in-app browser
+- **Local-first persistence** via SQLite with configurable data path
+- **Encrypted settings** via OS keychain (macOS Keychain, Windows DPAPI)
 
-## Tech Stack
+## Architecture
 
-- Electron
-- React
-- TypeScript
-- Vite
-- SQLite
-- Drizzle ORM
-- PDF.js
-- OpenAI and/or local Ollama
+```
+src/
+  main.ts                         Electron main process
+  preload.ts                      Typed IPC bridge
+  shared/ipc.ts                   Shared IPC contracts and types
+  main/db/                        SQLite persistence (Drizzle ORM)
+  main/documents/                 PDF import pipeline + utility worker
+  main/pdf/                       PDF.js text extraction
+  main/ocr/                       OCR runtime resolution + execution
+  main/analysis/                  AI division analysis
+  main/chat/                      Grounded division chat
+  main/flashcards/                Flashcard generation
+  main/practice/                  Practice problem generation
+  main/research/                  Web/video search + BrowserView
+  main/menu/                      macOS application menu
+  ui/                             React renderer (Tailwind, Radix)
+resources/
+  ocr/                            Python OCR runner + requirements
+  ocr-runtime/                    Bundled OCR runtimes (per-platform)
+  branding/                       App icons (.icns, .ico, .png)
+```
 
-## Repository Structure
+See also: [roadmap.md](./roadmap.md) | [release-readiness.md](./release-readiness.md) | [codex-context.md](./codex-context.md)
 
-Main entry points:
-- `src/main.ts`: Electron main process
-- `src/preload.ts`: typed preload bridge
-- `src/shared/ipc.ts`: shared IPC contracts
-- `src/ui/App.tsx`: main renderer workspace
-- `src/main/db/database.ts`: persistence layer
-- `src/main/documents/import.ts`: document import pipeline
-- `src/main/pdf/extraction.ts`: PDF text extraction
-- `src/main/ocr/runtime.ts`: OCR runtime resolution and execution
-- `src/main/analysis/subject-analysis.ts`: division analysis
-- `src/main/chat/grounded-chat.ts`: grounded chat
-- `src/main/flashcards/flashcard-generation.ts`: flashcard generation and mapping
-- `src/main/practice/practice-generation.ts`: practice generation
-- `src/main/research/search.ts`: research search/video workflow
-
-Supporting project docs:
-- [roadmap.md](./roadmap.md)
-- [release-readiness.md](./release-readiness.md)
-- [codex-context.md](./codex-context.md)
-
-## Prerequisites
-
-Required:
-- Node.js
-- npm
-
-Usually needed for local development:
-- a working Electron/native module toolchain
-- `better-sqlite3` native rebuild support
-
-Optional AI providers:
-- OpenAI API key
-- or local Ollama running on `http://localhost:11434`
-
-Optional research providers:
-- Brave Search API key
-- YouTube Data API key
-
-OCR development requirements:
-- Python 3
-- `tesseract`
-- OCR Python packages from [`resources/ocr/requirements.txt`](./resources/ocr/requirements.txt)
-
-## Install
-
-From the repo root:
+## Quick Start
 
 ```bash
 npm install
-```
-
-If you want OCR to work in development, create the local OCR virtualenv and install its dependencies:
-
-```bash
-python3 -m venv .venv
-.venv/bin/pip install -r resources/ocr/requirements.txt
-```
-
-On Ubuntu/WSL, install Tesseract too:
-
-```bash
-sudo apt-get update
-sudo apt-get install -y tesseract-ocr
-```
-
-On macOS, install it via Homebrew:
-
-```bash
-brew install tesseract
-```
-
-After that, StudyBud will prefer the repo-local `.venv` for OCR automatically.
-
-If native dependencies need repair for Node-side tests:
-
-```bash
-npm run rebuild:native:node
-```
-
-If native dependencies need repair for the Electron runtime:
-
-```bash
 npm run rebuild:native:electron
-```
-
-## Launch
-
-Development launch:
-
-```bash
 npm run dev
 ```
 
-This launches the Electron desktop app.
+Then open **Settings** and configure an [AI provider](#ai-providers).
 
-You should not open the Vite renderer URL directly in a browser and expect the app to work normally. StudyBud relies on Electron preload APIs.
+---
 
-Packaged dev build:
+## Platform Guides
 
-```bash
-npm run package
-```
+### Windows
 
-Installer/make step:
+**Prerequisites:** Node.js, npm, and a native-module toolchain (Visual Studio Build Tools or `windows-build-tools`).
 
 ```bash
-npm run make
+npm install
+npm run dev                  # launch in development
 ```
 
-Windows OCR runtime build:
+**Package for distribution** (bundles OCR + Tesseract into a self-contained Squirrel installer):
 
 ```bash
-npm run build:ocr:win
+npm run make                 # outputs to out/make/squirrel.windows/
 ```
 
-macOS OCR runtime build:
+OCR is bundled automatically during packaging via `npm run prepare:ocr-runtime`. To build the OCR runtime manually:
 
 ```bash
-npm run build:ocr:mac
+npm run build:ocr:win        # requires Python 3 + PyInstaller + Tesseract on PATH
 ```
 
-Both steps freeze the OCR helper into a bundled runtime for packaged builds of
-that platform. Each must be run on the target OS (cross-compilation of the
-native Tesseract tree is not supported here).
+See [`resources/ocr-runtime/README.md`](./resources/ocr-runtime/README.md) for the bundled runtime layout and env-var overrides.
 
-## Verification Commands
+---
 
-Typecheck:
+### macOS
 
-```bash
-npm run typecheck
-```
+Supports macOS 11+ on Apple Silicon (arm64) and Intel (x64). Builds are per-arch, not universal.
 
-Lint:
-
-```bash
-npm run lint
-```
-
-Prepared test run:
-
-```bash
-npm run test:prepared
-```
-
-Full local verification:
-
-```bash
-npm run verify
-```
-
-## Setup Guide
-
-### 1. Launch StudyBud
-
-Run:
-
-```bash
-npm run dev
-```
-
-### 2. Open Settings
-
-Configure:
-- AI provider
-- AI credentials/model
-- optional research provider keys
-- optional custom data path
-
-### 3. Choose an AI Provider
-
-OpenAI:
-- select `OpenAI`
-- enter an API key
-- save settings
-
-Ollama:
-- select `Ollama (local)`
-- keep `http://localhost:11434` unless your server is elsewhere
-- enter the local model name, for example `qwen3:8b`
-- save settings
-
-### 4. Create a Subject
-
-From the library:
-- create a new subject/class
-- open it into the workspace
-
-## Usage Guide
-
-### Import PDFs
-
-Inside a subject workspace:
-- import lecture PDFs
-- import homework PDFs
-
-StudyBud copies imported files into its own managed data directory and extracts page text/chunks for later AI use.
-
-If a page has weak or missing native text, StudyBud can automatically OCR only those flagged pages during import and store the improved text back into the same page/chunk pipeline.
-
-### Review Imported Documents
-
-After import you can:
-- open a document
-- view its PDF pages
-- inspect extracted page text
-- remove failed/unwanted documents
-
-If a PDF is scanned or image-only, the app may warn that text extraction is limited.
-
-If OCR is available, StudyBud will try to improve only the weak pages instead of OCRing the whole document.
-
-You can tell what happened from the UI:
-- document badges like `ocr used`, `ocr partial`, or `ocr unavailable`
-- page-level labels like `OCR text`, `Merged text`, or `Native text`
-- analysis surfaces such as `Unassigned Pages`, which now also show the text source for those pages
-
-### Run Subject Analysis
-
-Click `Analyze Subject`.
-
-StudyBud will:
-- gather imported ready documents
-- send extracted text to the configured AI provider
-- generate divisions, key concepts, problem types, and unassigned pages
-- save the analysis locally
-
-Note:
-- importing new PDFs only processes those new files
-- running analysis re-analyzes the full set of ready subject documents and replaces the saved division analysis
-
-### Study By Division
-
-Once analysis completes:
-- use the division navigator to move between study units
-- read the division summary
-- review key concepts
-- inspect problem types
-- click referenced lecture/homework pages to jump to the PDF viewer
-
-### Ask Questions
-
-Use Division Chat to ask broad questions about the current division.
-
-You can also highlight text from many places and use `Ask about this`, including:
-- division summary
-- key concepts
-- problem types
-- cited excerpts
-- extracted page text
-- chat messages
-- practice questions
-- practice answers
-
-Answers appear in the right-side chat rail and can include expandable grounding citations.
-
-### Study Flashcards
-
-From the subject `Flashcards` tab you can:
-- create a new deck
-- choose `Generate With AI` or `Create Manually`
-- select which units to include for AI generation
-- generate a mixed-difficulty deck with a chosen card count
-- write your own question/answer cards for manual decks
-
-Saved decks stay attached to the subject. Opening a deck lets you:
-- click the card to flip between question and answer
-- move left/right through the deck
-- open the card view in fullscreen
-- delete decks you no longer want
-
-### Generate Practice
-
-For the selected division:
-- choose a detected problem type
-- choose `easy`, `medium`, or `hard`
-- choose how many questions to generate
-- generate a saved practice set
-
-You can then:
-- reveal an answer
-- hide it again
-- ask for a question explanation
-- ask for an answer explanation
-- regenerate a set
-- delete a set
-
-### Use Research
-
-The `Research` tab can:
-- run web searches
-- show suggested search queries from recent AI answers
-- show suggested videos
-- open websites in the in-app browser
-- open websites externally
-- open videos externally in your default browser
-
-## AI Provider Notes
-
-### OpenAI
-
-Best when you want:
-- stronger analysis quality
-- stronger structured outputs
-- generally better reliability on large subjects
-
-Requires:
-- API key
-- internet connectivity
-
-### Ollama
-
-Best when you want:
-- lower-cost local testing
-- local/private iteration
-
-Requires:
-- local Ollama server running
-- a pulled local model
-
-Example model for a mid-range GPU:
-- `qwen3:8b`
-
-Important:
-- local models are often weaker than OpenAI for large or complex subject analysis
-- if a request is too large, local analysis may be slower or less reliable
-
-## Data and Persistence
-
-StudyBud stores:
-- imported PDFs
-- extracted pages/chunks
-- saved analysis
-- saved chat history
-- saved flashcard decks
-- saved practice sets
-- settings
-
-The app supports a configurable data path from Settings.
-
-## OCR Notes
-
-StudyBud now supports OCR as an import-stage enhancement.
-
-How it works:
-- normal PDF text extraction runs first
-- only weak/scanned pages are flagged for OCR
-- OCR results are stored back into the same document pages/chunks used by analysis, chat, practice, and citations
-
-Current OCR behavior:
-- development mode uses the Python OCR fallback in [`resources/ocr/ocr_runner.py`](./resources/ocr/ocr_runner.py)
-- the app prefers a repo-local `.venv` if present
-- packaged mode expects a bundled runtime under [`resources/ocr-runtime`](./resources/ocr-runtime): `windows-<arch>/ocr_runner.exe` on Windows, `darwin-<arch>/ocr_runner` on macOS
-
-Current Python OCR stack:
-- `PyMuPDF`
-- `pytesseract`
-- system `tesseract`
-
-Development OCR sanity check:
-
-```bash
-.venv/bin/python resources/ocr/ocr_runner.py --status
-```
-
-Expected healthy output is a JSON object with `"available": true`.
-
-## WSL Notes
-
-StudyBud is Windows-first, but development often happens inside WSL.
-
-That can affect:
-- Electron external-link behavior
-- native rebuilds
-- Ollama access if Ollama runs on Windows and Electron runs in WSL
-
-If something behaves strangely in WSL but not on Windows, treat that as a real possibility rather than assuming the app logic is wrong.
-
-## macOS Notes
-
-StudyBud supports macOS 11+ on both Apple Silicon and Intel.
-
-Prerequisites:
+**Prerequisites:**
 
 ```bash
 xcode-select --install
 brew install python tesseract
 ```
 
-Create the Python OCR environment and install native modules for Electron:
+**Install and run:**
 
 ```bash
 npm install
-python3 -m venv .venv
-.venv/bin/pip install -r resources/ocr/requirements.txt pyinstaller
 npm run rebuild:native:electron
-```
-
-Development launch:
-
-```bash
 npm run dev
 ```
 
-In dev mode, OCR uses the Python fallback in `.venv` and Homebrew's
-`tesseract` binary. `safeStorage` is backed by the macOS Keychain, so saved
-API keys are encrypted at rest just like on Windows.
+In dev mode, OCR uses a Python fallback against Homebrew's `tesseract`. `safeStorage` is backed by macOS Keychain.
 
-Build a bundled OCR runtime for packaging:
+**Package for distribution** (bundles OCR + relocated Tesseract dylibs into a `.app` / `.dmg` / `.zip`):
 
 ```bash
-npm run build:ocr:mac
+npm run make                 # outputs to out/make/
 ```
 
-This produces `resources/ocr-runtime/darwin-<arch>/ocr_runner/` with a
-relocated Tesseract tree. The packaged app resolves it via
-`process.resourcesPath` at runtime.
-
-Package and make artifacts:
+To build the OCR runtime standalone:
 
 ```bash
-npm run package    # produces out/StudyBud-darwin-<arch>/StudyBud.app
-npm run make       # also emits a .zip and a .dmg under out/make/
+npm run build:ocr:mac        # requires Python 3 + PyInstaller + brew tesseract
 ```
 
-Apple Silicon machines produce an `arm64` build; Intel machines produce an
-`x64` build. Cross-arch builds and universal (`arm64` + `x64`) binaries are
-not wired up in this repo.
+The build script copies Tesseract + leptonica dylibs and rewrites load paths via `install_name_tool` so the bundle is self-contained without Homebrew on the target machine.
 
-Distribution here is **unsigned** (no Apple Developer ID). First-launch
-quarantine must be cleared one way or the other:
+**Distribution is unsigned.** First launch requires one of:
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/StudyBud.app
+# or: right-click the app > Open > confirm Gatekeeper prompt
 ```
 
-Alternatively, users can right-click the app in Finder, choose `Open`, and
-confirm the Gatekeeper prompt once. Signing and notarization hooks can be
-wired into `forge.config.ts` later by setting `osxSign` / `osxNotarize`.
+Signing/notarization can be wired into `forge.config.ts` (`osxSign` / `osxNotarize`) later.
 
-Verify the packaged OCR runtime once built:
+---
 
-```bash
-./resources/ocr-runtime/darwin-arm64/ocr_runner --status
-```
+### Linux / WSL
 
-Expected healthy output is a JSON object with `"available": true` and an
-engine string mentioning `PyMuPDF + pytesseract`.
+Works for development. Produces `.deb` and `.rpm` packages, but **bundled OCR is not yet supported** -- packaged Linux builds will report OCR as unavailable.
 
-## Troubleshooting
-
-### The app opens in a browser instead of as a desktop app
-
-Use:
+**Prerequisites:** Node.js, npm, Python 3, `tesseract-ocr`.
 
 ```bash
+# Ubuntu/WSL
+sudo apt-get install -y tesseract-ocr
+
+npm install
 npm run dev
 ```
 
-Do not open the renderer URL directly as if this were a normal web app.
-
-### Native module errors involving `better-sqlite3`
-
-Try:
+**Dev OCR setup** (optional):
 
 ```bash
-npm run rebuild:native:electron
+python3 -m venv .venv
+.venv/bin/pip install -r resources/ocr/requirements.txt
 ```
 
-For Node-side test issues:
+**WSL notes:** Electron external links, Ollama access (if Ollama runs on the Windows host), and native rebuilds can behave differently under WSL. If something is broken in WSL but not on bare Windows, that's a real possibility.
 
-```bash
-npm run rebuild:native:node
-```
+---
 
-### Ollama is selected but analysis/chat fails
+## AI Providers
 
-Check:
-- Ollama is running
-- the configured base URL is correct
-- the model exists locally
-- the model is not too weak for the current analysis size
+Configure in **Settings** after launching the app.
 
-### Imported PDF has little or no usable content
+| Provider | Best for | Requires |
+|----------|----------|----------|
+| **OpenAI** | Stronger analysis, structured outputs, large subjects | API key + internet |
+| **Ollama** | Free local inference, private iteration | Local server + pulled model (e.g. `qwen3:8b`) |
 
-That usually means:
-- the PDF is scanned/image-only
-- extraction was limited
-- OCR is not available in the current environment
-- OCR ran but the page still had limited recoverable text
+Optional research providers (also in Settings): **Brave Search API** key, **YouTube Data API** key.
 
-Check OCR setup with:
+## OCR
+
+Packaged builds (Windows, macOS) ship a **fully bundled OCR runtime** -- no Python or Tesseract install required on the end-user machine. The bundle includes:
+
+- A PyInstaller-frozen Python interpreter with PyMuPDF + pytesseract
+- A vendored Tesseract binary + tessdata + shared libraries
+
+In development, OCR falls back to `resources/ocr/ocr_runner.py` using a repo-local `.venv` and system `tesseract`.
+
+Verify OCR health:
 
 ```bash
 .venv/bin/python resources/ocr/ocr_runner.py --status
+# Should print: {"available": true, "engine": "PyMuPDF + pytesseract", ...}
 ```
 
-If it says `fitz` is missing, install the OCR requirements into `.venv`.
+## Scripts Reference
 
-If it says `tesseract` is unavailable, install `tesseract-ocr` and restart the app.
+| Script | Purpose |
+|--------|---------|
+| `npm run dev` | Launch Electron in development |
+| `npm run package` | Build packaged `.app` / `.exe` (includes OCR prep + native rebuild) |
+| `npm run make` | Package + create platform installers (Squirrel, DMG, ZIP, deb, rpm) |
+| `npm run build:ocr:win` | Build Windows OCR runtime (must run on Windows) |
+| `npm run build:ocr:mac` | Build macOS OCR runtime (must run on macOS) |
+| `npm run typecheck` | TypeScript type check |
+| `npm run lint` | ESLint |
+| `npm run test` | Vitest suite |
+| `npm run verify` | typecheck + lint + test + package |
+| `npm run rebuild:native:electron` | Rebuild `better-sqlite3` for Electron's ABI |
+| `npm run rebuild:native:node` | Rebuild `better-sqlite3` for Node's ABI (for tests) |
 
-## Release / Demo Notes
+## Troubleshooting
 
-Before demos or packaging, use:
-- [release-readiness.md](./release-readiness.md)
+**`better-sqlite3` module errors** -- run `npm run rebuild:native:electron` (or `rebuild:native:node` for test failures).
 
-For an abbreviated manual pass:
-- run the checklist you keep for imports, analysis, chat, practice, and research together
+**Ollama analysis/chat fails** -- confirm Ollama is running, the base URL is correct, and the model is pulled locally. Weak models may struggle with large subjects.
+
+**Imported PDF has no usable text** -- the PDF is likely scanned/image-only. Check OCR availability with `.venv/bin/python resources/ocr/ocr_runner.py --status`. Install missing deps (`pip install -r resources/ocr/requirements.txt`, `apt install tesseract-ocr` or `brew install tesseract`).
+
+**App opens in browser instead of desktop window** -- always launch with `npm run dev`, not by opening the Vite dev server URL directly.
 
 ## License
 
