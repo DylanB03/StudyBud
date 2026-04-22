@@ -1,6 +1,7 @@
 <p align="center">
   <img src="studyBud.png" alt="StudyBud">
 </p>
+
 <center>Enhance your academic performance with AI.</center>
 
 ---
