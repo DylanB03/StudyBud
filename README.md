@@ -1,4 +1,9 @@
-# StudyBud
+<p align="center">
+  <img src="studyBud.png" alt="StudyBud">
+</p>
+<center>Enhance your academic performance with AI.</center>
+
+---
 
 AI-powered desktop app that turns lecture and homework PDFs into a structured study workspace with division-based analysis, grounded chat, flashcards, practice generation, and in-app research.
 
